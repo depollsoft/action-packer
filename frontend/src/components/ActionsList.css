@@ -1,0 +1,67 @@
+.actions-list h2 {
+  margin-bottom: 1.5rem;
+  color: #24292e;
+}
+
+.actions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 1.5rem;
+}
+
+.action-card {
+  background-color: white;
+  border: 1px solid #e1e4e8;
+  border-radius: 6px;
+  padding: 1.5rem;
+  transition: box-shadow 0.2s;
+}
+
+.action-card:hover {
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+}
+
+.action-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  margin-bottom: 1rem;
+  gap: 1rem;
+}
+
+.action-header h3 {
+  color: #24292e;
+  font-size: 1.2rem;
+  margin: 0;
+  flex: 1;
+}
+
+.status-badge {
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.action-details {
+  color: #586069;
+  font-size: 0.9rem;
+}
+
+.action-details p {
+  margin: 0.5rem 0;
+}
+
+.action-details strong {
+  color: #24292e;
+}
+
+.empty-state {
+  text-align: center;
+  color: #586069;
+  padding: 3rem;
+  font-size: 1.1rem;
+}

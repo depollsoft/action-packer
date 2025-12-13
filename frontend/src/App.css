@@ -1,0 +1,74 @@
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  background-color: #24292e;
+  color: white;
+  padding: 2rem;
+  text-align: center;
+}
+
+.header h1 {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.header p {
+  font-size: 1.2rem;
+  opacity: 0.9;
+}
+
+.tabs {
+  display: flex;
+  background-color: white;
+  border-bottom: 2px solid #e1e4e8;
+  padding: 0 2rem;
+}
+
+.tab {
+  background: none;
+  border: none;
+  padding: 1rem 2rem;
+  font-size: 1rem;
+  cursor: pointer;
+  color: #586069;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.2s;
+}
+
+.tab:hover {
+  color: #24292e;
+}
+
+.tab.active {
+  color: #24292e;
+  border-bottom-color: #0366d6;
+  font-weight: 600;
+}
+
+.main {
+  flex: 1;
+  padding: 2rem;
+  max-width: 1200px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.loading {
+  text-align: center;
+  padding: 3rem;
+  font-size: 1.2rem;
+  color: #586069;
+}
+
+.error {
+  background-color: #ffeef0;
+  color: #d73a49;
+  padding: 1rem;
+  border-radius: 6px;
+  border: 1px solid #d73a49;
+}
