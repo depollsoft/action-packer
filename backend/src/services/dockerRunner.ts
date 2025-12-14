@@ -66,9 +66,9 @@ export async function getDockerInfo(): Promise<object | null> {
 }
 
 /**
- * Pull the runner image if not present for the specified platform
- * Note: Docker can have the same image for multiple platforms, so we need
- * to pull and tag with architecture to ensure we use the right variant.
+ * Pull the runner image for the specified platform
+ * Note: Docker multi-arch images require explicit platform handling.
+ * We pull with --platform and verify the architecture before use.
  */
 export async function pullRunnerImage(
   architecture: string = 'amd64'
@@ -81,13 +81,21 @@ export async function pullRunnerImage(
     : [RUNNER_IMAGE, 'latest'];
   const platformTag = `${repo}:${architecture}`;
   
-  // Check if we already have the platform-specific tag
+  // Check if we already have the platform-specific tag with correct architecture
   try {
-    await d.getImage(platformTag).inspect();
-    console.log(`Image ${platformTag} already exists`);
-    return platformTag;
+    const existingImage = await d.getImage(platformTag).inspect();
+    const imageArch = existingImage.Architecture;
+    // Normalize architecture names (amd64 = x64, arm64 = aarch64)
+    const normalizedImageArch = imageArch === 'amd64' ? 'amd64' : (imageArch === 'arm64' ? 'arm64' : imageArch);
+    const normalizedRequestedArch = architecture === 'x64' ? 'amd64' : architecture;
+    
+    if (normalizedImageArch === normalizedRequestedArch) {
+      console.log(`Image ${platformTag} already exists with correct architecture (${imageArch})`);
+      return platformTag;
+    }
+    console.log(`Image ${platformTag} exists but has wrong architecture (${imageArch}), re-pulling...`);
   } catch {
-    // Need to pull
+    // Image doesn't exist, need to pull
   }
   
   console.log(`Pulling image ${RUNNER_IMAGE} for ${platform}...`);
@@ -114,11 +122,18 @@ export async function pullRunnerImage(
     });
   });
   
+  // Verify the pulled image has the correct architecture
+  const pulledImage = await d.getImage(RUNNER_IMAGE).inspect();
+  console.log(`Pulled image architecture: ${pulledImage.Architecture}`);
+  
   // Tag the pulled image with architecture-specific tag
-  // This ensures we can reference the correct platform variant
   console.log(`Tagging image as ${platformTag}...`);
   const image = d.getImage(RUNNER_IMAGE);
   await image.tag({ repo, tag: architecture });
+  
+  // Verify the tagged image
+  const taggedImage = await d.getImage(platformTag).inspect();
+  console.log(`Tagged image ${platformTag} architecture: ${taggedImage.Architecture}`);
   
   return platformTag;
 }
