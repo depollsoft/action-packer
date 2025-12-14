@@ -68,20 +68,27 @@ export async function getDockerInfo(): Promise<object | null> {
 /**
  * Pull the runner image if not present for the specified platform
  * Note: Docker can have the same image for multiple platforms, so we need
- * to check the specific platform, not just if the image tag exists.
+ * to pull and tag with architecture to ensure we use the right variant.
  */
 export async function pullRunnerImage(
   architecture: string = 'amd64'
-): Promise<void> {
+): Promise<string> {
   const d = initDocker();
   const platform = `linux/${architecture}`;
-  const platformTag = `${RUNNER_IMAGE}-${architecture}`;
+  const platformTag = `${RUNNER_IMAGE}:${architecture}`;
   
-  // Always pull with platform specification to ensure we get the right architecture
-  // Docker will use cached layers if available
+  // Check if we already have the platform-specific tag
+  try {
+    await d.getImage(platformTag).inspect();
+    console.log(`Image ${platformTag} already exists`);
+    return platformTag;
+  } catch {
+    // Need to pull
+  }
+  
   console.log(`Pulling image ${RUNNER_IMAGE} for ${platform}...`);
   
-  return new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     d.pull(RUNNER_IMAGE, { platform }, (err: Error | null, stream: NodeJS.ReadableStream | undefined) => {
       if (err) {
         reject(err);
@@ -102,6 +109,14 @@ export async function pullRunnerImage(
       });
     });
   });
+  
+  // Tag the pulled image with architecture-specific tag
+  // This ensures we can reference the correct platform variant
+  console.log(`Tagging image as ${platformTag}...`);
+  const image = d.getImage(RUNNER_IMAGE);
+  await image.tag({ repo: RUNNER_IMAGE.split(':')[0], tag: architecture });
+  
+  return platformTag;
 }
 
 /**
@@ -139,8 +154,8 @@ export async function createDockerRunner(
     ? `https://github.com/${credential.target}`
     : `https://github.com/${credential.target}`;
   
-  // Pull image if needed
-  await pullRunnerImage(architecture);
+  // Pull image and get the platform-specific tag
+  const imageTag = await pullRunnerImage(architecture);
   
   // Environment variables for the container
   const env = [
@@ -165,13 +180,10 @@ export async function createDockerRunner(
   
   updateRunnerStatus.run('configuring', runnerId);
   
-  const platform = `linux/${architecture}`;
-  
   try {
-    // Create container with platform specification
-    // dockerode passes platform as a query parameter to the Docker API
+    // Create container using the architecture-specific image tag
     const container = await d.createContainer({
-      Image: RUNNER_IMAGE,
+      Image: imageTag,
       name: `action-packer-${runnerId}`,
       Env: env,
       HostConfig: {
@@ -182,8 +194,6 @@ export async function createDockerRunner(
         'action-packer.runner-id': runnerId,
         'action-packer.runner-name': name,
       },
-      // @ts-expect-error - dockerode types don't include platform but the API supports it
-      platform,
     });
     
     // Update container ID
