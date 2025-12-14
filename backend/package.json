@@ -12,14 +12,25 @@
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
+    "@octokit/rest": "^22.0.1",
+    "better-sqlite3": "^12.5.0",
     "cors": "^2.8.5",
-    "express": "^5.0.0"
+    "dockerode": "^4.0.9",
+    "express": "^5.0.0",
+    "tar-fs": "^2.1.4",
+    "uuid": "^13.0.0",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/cors": "^2.8.17",
+    "@types/dockerode": "^3.3.47",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
     "@types/supertest": "^6.0.2",
+    "@types/tar-fs": "^2.0.4",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.18.1",
     "supertest": "^7.1.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
