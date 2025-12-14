@@ -22,6 +22,7 @@ type PoolFormData = {
   credentialId: string;
   labels: string;
   isolationType: IsolationType;
+  architecture: 'x64' | 'arm64';
   minRunners: number;
   maxRunners: number;
   warmRunners: number;
@@ -44,6 +45,7 @@ function AddPoolForm({
     credentialId: credentials[0]?.id || '',
     labels: '',
     isolationType: systemInfo?.defaultIsolation || 'native',
+    architecture: systemInfo?.architecture || 'arm64',
     minRunners: 0,
     maxRunners: 5,
     warmRunners: 1,
@@ -76,6 +78,7 @@ function AddPoolForm({
       credentialId: formData.credentialId,
       labels,
       isolationType: formData.isolationType,
+      architecture: formData.isolationType === 'docker' ? formData.architecture : undefined,
       minRunners: formData.minRunners,
       maxRunners: formData.maxRunners,
       warmRunners: formData.warmRunners,
@@ -149,6 +152,27 @@ function AddPoolForm({
               ))}
             </select>
           </div>
+          
+          {formData.isolationType === 'docker' && (
+            <div>
+              <label className="label">Architecture</label>
+              <select
+                className="input"
+                value={formData.architecture}
+                onChange={(e) =>
+                  setFormData({ ...formData, architecture: e.target.value as 'x64' | 'arm64' })
+                }
+              >
+                <option value="arm64">ARM64 (native on Apple Silicon)</option>
+                <option value="x64">x64/AMD64 (emulated on Apple Silicon)</option>
+              </select>
+              {formData.architecture === 'x64' && systemInfo?.architecture === 'arm64' && (
+                <p className="text-xs text-yellow-400 mt-1">
+                  ⚠️ x64 will run under emulation on ARM64, which may be slower
+                </p>
+              )}
+            </div>
+          )}
           
           <div className="grid grid-cols-2 gap-4">
             <div>
