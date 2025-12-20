@@ -15,6 +15,29 @@ vi.mock('./api', async (importOriginal) => {
           installation: { complete: true, count: 1 },
         },
       }),
+      getCurrentUser: vi.fn().mockResolvedValue({
+        user: {
+          id: 12345,
+          login: 'testuser',
+          name: 'Test User',
+          email: 'test@example.com',
+          avatarUrl: 'https://avatars.githubusercontent.com/u/12345',
+        },
+      }),
+      logout: vi.fn().mockResolvedValue({ success: true }),
+    },
+    onAuthError: vi.fn().mockReturnValue(() => {}),
+    ApiError: class ApiError extends Error {
+      code: string;
+      status: number;
+      constructor(message: string, code: string, status: number) {
+        super(message);
+        this.code = code;
+        this.status = status;
+      }
+      get isAuthError() { return this.status === 401 || this.status === 403; }
+      get isNotAuthenticated() { return this.code === 'NOT_AUTHENTICATED' || this.code === 'SESSION_EXPIRED'; }
+      get isNotAdmin() { return this.code === 'NOT_ADMIN'; }
     },
   };
 });
@@ -26,9 +49,9 @@ describe('App', () => {
 
   it('renders the Action Packer app', async () => {
     render(<App />);
-    // Wait for loading to finish
+    // Wait for loading to finish and show main app (Dashboard appears in nav and in page heading)
     await waitFor(() => {
-      expect(screen.getByText(/Action Packer/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/Dashboard/i).length).toBeGreaterThan(0);
     });
   });
   

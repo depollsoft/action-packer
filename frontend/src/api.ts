@@ -18,6 +18,44 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+// Custom error class for API errors
+export class ApiError extends Error {
+  code: string;
+  status: number;
+  
+  constructor(message: string, code: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+    this.status = status;
+  }
+  
+  get isAuthError(): boolean {
+    return this.status === 401 || this.status === 403;
+  }
+  
+  get isNotAuthenticated(): boolean {
+    return this.code === 'NOT_AUTHENTICATED' || this.code === 'SESSION_EXPIRED';
+  }
+  
+  get isNotAdmin(): boolean {
+    return this.code === 'NOT_ADMIN';
+  }
+}
+
+// Event emitter for auth errors
+type AuthErrorListener = (error: ApiError) => void;
+const authErrorListeners: Set<AuthErrorListener> = new Set();
+
+export function onAuthError(listener: AuthErrorListener): () => void {
+  authErrorListeners.add(listener);
+  return () => authErrorListeners.delete(listener);
+}
+
+function notifyAuthError(error: ApiError): void {
+  authErrorListeners.forEach(listener => listener(error));
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -26,6 +64,7 @@ async function request<T>(
   
   const response = await fetch(url, {
     ...options,
+    credentials: 'include', // Include cookies for session auth
     headers: {
       'Content-Type': 'application/json',
       ...options.headers,
@@ -33,8 +72,23 @@ async function request<T>(
   });
   
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || `HTTP ${response.status}`);
+    const error = await response.json().catch(() => ({ 
+      error: 'Request failed',
+      code: 'UNKNOWN_ERROR'
+    }));
+    
+    const apiError = new ApiError(
+      error.message || error.error || `HTTP ${response.status}`,
+      error.code || 'UNKNOWN_ERROR',
+      response.status
+    );
+    
+    // Notify listeners of auth errors
+    if (apiError.isAuthError) {
+      notifyAuthError(apiError);
+    }
+    
+    throw apiError;
   }
   
   // Handle 204 No Content

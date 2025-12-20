@@ -629,6 +629,13 @@ router.get('/auth/callback', async (req: Request, res: Response, next: NextFunct
       expiresAt
     );
 
+    // If this is the first user to log in after setup, make them the admin
+    const existingAdminId = getSetting('admin_user_id');
+    if (!existingAdminId && getSetting('setup_complete') === 'true') {
+      setSetting('admin_user_id', user.id.toString());
+      console.log(`👑 User ${user.login} (${user.id}) set as admin`);
+    }
+
     // Redirect to frontend with session cookie
     res.cookie('session', sessionId, {
       httpOnly: true,

@@ -11,6 +11,7 @@ import { poolsRouter } from './routes/pools.js';
 import { webhooksRouter } from './routes/webhooks.js';
 import { onboardingRouter } from './routes/onboarding.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { requireAuth } from './middleware/auth.js';
 import { initializeSchema, db } from './db/index.js';
 
 const app = express();
@@ -69,10 +70,13 @@ app.use(express.urlencoded({ extended: true }));
 // Routes
 app.use('/health', healthRouter);
 app.use('/api', apiRouter);
-app.use('/api/credentials', credentialsRouter);
-app.use('/api/runners', runnersRouter);
-app.use('/api/pools', poolsRouter);
+// Protected admin routes - require authentication after setup is complete
+app.use('/api/credentials', requireAuth, credentialsRouter);
+app.use('/api/runners', requireAuth, runnersRouter);
+app.use('/api/pools', requireAuth, poolsRouter);
+// Webhooks don't require user auth (they use webhook secret verification)
 app.use('/api/webhooks', webhooksRouter);
+// Onboarding and auth routes handle their own auth logic
 app.use('/api/onboarding', onboardingRouter);
 // Also mount auth routes at /api/auth for convenience
 app.use('/api/github-app', onboardingRouter);

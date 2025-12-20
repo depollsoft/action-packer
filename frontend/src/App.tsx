@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
-import { Layout, Dashboard, CredentialManager, RunnerManager, PoolManager, OnboardingWizard } from './components';
-import { useWebSocket } from './hooks';
+import { Layout, Dashboard, CredentialManager, RunnerManager, PoolManager, OnboardingWizard, LoginPage } from './components';
+import { useWebSocket, AuthProvider, useAuth } from './hooks';
 import { onboardingApi } from './api';
 import type { SetupStatus } from './types';
 
@@ -75,6 +75,44 @@ function AppContent() {
     return <OnboardingWizard onComplete={handleOnboardingComplete} />;
   }
 
+  // After onboarding is complete, require authentication
+  return (
+    <AuthProvider setupComplete={!showOnboarding}>
+      <AuthenticatedApp
+        currentPage={currentPage}
+        onPageChange={handlePageChange}
+        isConnected={isConnected}
+      />
+    </AuthProvider>
+  );
+}
+
+interface AuthenticatedAppProps {
+  currentPage: Page;
+  onPageChange: (page: string) => void;
+  isConnected: boolean;
+}
+
+function AuthenticatedApp({ currentPage, onPageChange, isConnected }: AuthenticatedAppProps) {
+  const { user, isLoading: isAuthLoading, isAuthenticated, error, clearError } = useAuth();
+
+  // Show loading while checking auth
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-forest-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-muted">Checking authentication...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login page if not authenticated
+  if (!isAuthenticated) {
+    return <LoginPage error={error} onClearError={clearError} />;
+  }
+
   const renderPage = () => {
     switch (currentPage) {
       case 'dashboard':
@@ -95,8 +133,9 @@ function AppContent() {
   return (
     <Layout
       currentPage={currentPage}
-      onPageChange={handlePageChange}
+      onPageChange={onPageChange}
       isConnected={isConnected}
+      user={user}
     >
       {renderPage()}
     </Layout>
