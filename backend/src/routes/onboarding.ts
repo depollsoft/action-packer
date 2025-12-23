@@ -28,6 +28,8 @@ import {
 } from '../services/githubApp.js';
 
 const router = Router();
+const authRouter = Router();
+const githubAppRouter = Router();
 
 function isDebugOAuthEnabled(): boolean {
   return process.env.DEBUG_OAUTH === '1' || process.env.DEBUG_OAUTH === 'true';
@@ -342,7 +344,7 @@ async function handleGitHubAppManifestCallback(
 router.get('/github-app/callback', handleGitHubAppManifestCallback);
 
 // Preferred route (when mounted at /api/github-app)
-router.get('/callback', handleGitHubAppManifestCallback);
+githubAppRouter.get('/callback', handleGitHubAppManifestCallback);
 
 /**
  * Store GitHub App credentials in the database
@@ -722,7 +724,7 @@ function handleOAuthLogin(_req: Request, res: Response, next: NextFunction): voi
 router.get('/auth/login', handleOAuthLogin);
 
 // When mounted at /api/auth
-router.get('/login', handleOAuthLogin);
+authRouter.get('/login', handleOAuthLogin);
 
 /**
  * GET /api/auth/callback
@@ -912,13 +914,13 @@ async function handleOAuthCallback(req: Request, res: Response, next: NextFuncti
 router.get('/auth/callback', handleOAuthCallback);
 
 // When mounted at /api/auth
-router.get('/callback', handleOAuthCallback);
+authRouter.get('/callback', handleOAuthCallback);
 
 /**
  * GET /api/onboarding/auth/me
  * Get the current authenticated user
  */
-router.get('/auth/me', (req: Request, res: Response, next: NextFunction) => {
+function handleAuthMe(req: Request, res: Response, next: NextFunction): void {
   try {
     const sessionId = req.cookies?.session;
 
@@ -948,13 +950,16 @@ router.get('/auth/me', (req: Request, res: Response, next: NextFunction) => {
   } catch (error) {
     next(error);
   }
-});
+}
+
+router.get('/auth/me', handleAuthMe);
+authRouter.get('/me', handleAuthMe);
 
 /**
  * POST /api/onboarding/auth/logout
  * Log out the current user
  */
-router.post('/auth/logout', (req: Request, res: Response, next: NextFunction) => {
+function handleAuthLogout(req: Request, res: Response, next: NextFunction): void {
   try {
     const sessionId = (req as Request & { cookies?: Record<string, string> }).cookies?.session;
 
@@ -967,7 +972,10 @@ router.post('/auth/logout', (req: Request, res: Response, next: NextFunction) =>
   } catch (error) {
     next(error);
   }
-});
+}
+
+router.post('/auth/logout', handleAuthLogout);
+authRouter.post('/logout', handleAuthLogout);
 
 // ============================================
 // Create credential from installation
@@ -1147,4 +1155,4 @@ export function handleInstallationWebhook(
   }
 }
 
-export { router as onboardingRouter };
+export { router as onboardingRouter, authRouter, githubAppRouter };

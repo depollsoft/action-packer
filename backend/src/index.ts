@@ -13,7 +13,7 @@ import { credentialsRouter } from './routes/credentials.js';
 import { runnersRouter } from './routes/runners.js';
 import { poolsRouter } from './routes/pools.js';
 import { webhooksRouter } from './routes/webhooks.js';
-import { onboardingRouter } from './routes/onboarding.js';
+import { onboardingRouter, authRouter, githubAppRouter } from './routes/onboarding.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { requireAuth } from './middleware/auth.js';
 import { initializeSchema, db } from './db/index.js';
@@ -154,9 +154,8 @@ app.use('/api/pools', requireAuth, poolsRouter);
 app.use('/api/webhooks', webhooksRouter);
 // Onboarding and auth routes handle their own auth logic
 app.use('/api/onboarding', onboardingRouter);
-// Also mount auth routes at /api/auth for convenience
-app.use('/api/github-app', onboardingRouter);
-app.use('/api/auth', onboardingRouter);
+app.use('/api/github-app', githubAppRouter);
+app.use('/api/auth', authRouter);
 
 // Production: serve the built frontend from the backend (Option A)
 if (process.env.NODE_ENV === 'production') {
