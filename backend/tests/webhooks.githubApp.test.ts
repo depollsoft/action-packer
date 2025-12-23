@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, afterAll, afterEach, beforeEach } from 'vitest';
 import request from 'supertest';
 import { app, server } from '../src/index.js';
 import { db } from '../src/db/index.js';
@@ -9,12 +9,23 @@ afterAll(() => {
 });
 
 describe('GitHub App webhook verification', () => {
-  it('accepts workflow_job when only GitHub App webhook secret exists', async () => {
-    // Clean relevant tables to avoid cross-test pollution
+  beforeEach(() => {
+    // Clean relevant tables before each test to avoid cross-test pollution
     db.prepare('DELETE FROM webhook_configs').run();
     db.prepare('DELETE FROM runner_pools').run();
     db.prepare('DELETE FROM credentials').run();
     db.prepare('DELETE FROM github_app').run();
+  });
+
+  afterEach(() => {
+    // Clean up after each test
+    db.prepare('DELETE FROM webhook_configs').run();
+    db.prepare('DELETE FROM runner_pools').run();
+    db.prepare('DELETE FROM credentials').run();
+    db.prepare('DELETE FROM github_app').run();
+  });
+
+  it('accepts workflow_job when only GitHub App webhook secret exists', async () => {
 
     const appWebhookSecret = 'test-app-webhook-secret';
     const encryptedSecret = encrypt(appWebhookSecret);

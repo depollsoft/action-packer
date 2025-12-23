@@ -25,16 +25,22 @@ const getCredentialById = db.prepare('SELECT * FROM credentials WHERE id = ?');
 
 /**
  * Check if a pool's labels match the job's requested labels.
+ * Standard labels (self-hosted, os, arch) are ignored; only custom labels must match.
  */
 export function labelsMatch(poolLabels: string[], jobLabels: string[]): boolean {
   if (jobLabels.length === 0) return true;
 
-  const standardLabels = ['self-hosted', 'linux', 'macos', 'windows', 'x64', 'arm64', 'ARM64'];
-  const customJobLabels = jobLabels.filter(l => !standardLabels.includes(l));
+  // Standard labels that GitHub adds automatically (case-insensitive)
+  const standardLabels = ['self-hosted', 'linux', 'macos', 'windows', 'x64', 'arm64'];
+  const isStandardLabel = (l: string) => standardLabels.includes(l.toLowerCase());
+
+  const customJobLabels = jobLabels.filter(l => !isStandardLabel(l));
 
   if (customJobLabels.length === 0) return true;
 
-  return customJobLabels.every(jobLabel => poolLabels.includes(jobLabel));
+  // Custom labels must match (case-insensitive)
+  const poolLabelsLower = poolLabels.map(l => l.toLowerCase());
+  return customJobLabels.every(jobLabel => poolLabelsLower.includes(jobLabel.toLowerCase()));
 }
 
 /**

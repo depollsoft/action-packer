@@ -161,12 +161,19 @@ webhooksRouter.post('/github', async (req: Request, res: Response) => {
         console.log(`[webhook] Job ${payload.workflow_job.id} queued with labels: ${jobLabels.join(', ')}`);
         
         // Find matching pools and scale up
+        let matchedPools = 0;
         for (const pool of pools) {
           const poolLabels = JSON.parse(pool.labels) as string[];
+          const matches = labelsMatch(poolLabels, jobLabels);
+          console.log(`[webhook] Pool ${pool.name} labels=[${poolLabels.join(',')}] matches=${matches}`);
           
-          if (labelsMatch(poolLabels, jobLabels)) {
+          if (matches) {
+            matchedPools++;
             await scaleUp(pool);
           }
+        }
+        if (matchedPools === 0) {
+          console.log(`[webhook] No pools matched job labels`);
         }
         break;
       }
