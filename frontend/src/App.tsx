@@ -143,6 +143,8 @@ function AuthenticatedApp({ currentPage, onPageChange, isConnected }: Authentica
 }
 
 function SettingsPage() {
+  const wsUrl = import.meta.env.VITE_WS_URL || `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
+
   return (
     <div className="space-y-6">
       <div>
@@ -159,7 +161,7 @@ function SettingsPage() {
           </div>
           <div className="flex justify-between">
             <span className="text-muted">WebSocket URL</span>
-            <span className="font-mono">ws://localhost:3001/ws</span>
+            <span className="font-mono">{wsUrl}</span>
           </div>
         </div>
       </div>
