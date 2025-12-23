@@ -4,12 +4,11 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
 import { db, type RunnerPoolRow, type WebhookConfigRow } from '../db/index.js';
 import type { CredentialRow, GitHubAppRow } from '../db/schema.js';
 import { decrypt, verifyHmacSignature } from '../utils/index.js';
 import {
-  type GitHubScope,
+  removeDockerRunner,
 } from '../services/index.js';
 import { ensureWarmRunners, labelsMatch, scaleUp, scaleDown as autoscaleDown } from '../services/autoscaler.js';
 
@@ -66,8 +65,6 @@ const getCredentialByInstallationAndTarget = db.prepare(`
 const getPoolsByCredential = db.prepare(`
   SELECT * FROM runner_pools WHERE credential_id = ? AND enabled = 1
 `);
-
-const getCredentialById = db.prepare('SELECT * FROM credentials WHERE id = ?');
 
 // Re-export for compatibility (used by future periodic tasks)
 export async function scaleDown(pool: RunnerPoolRow): Promise<void> {
