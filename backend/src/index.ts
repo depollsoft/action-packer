@@ -24,6 +24,26 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const httpServer = createServer(app);
 
+// Trust reverse proxies (e.g. Cloudflare Tunnel) for correct protocol/host handling
+app.set('trust proxy', true);
+
+const DEBUG_OAUTH = process.env.DEBUG_OAUTH === '1' || process.env.DEBUG_OAUTH === 'true';
+
+function mask(value: string | null | undefined, visible: number = 6): string {
+  if (!value) return '<none>';
+  if (value.length <= visible) return value;
+  return `…${value.slice(-visible)}`;
+}
+
+function getQueryParam(originalUrl: string, key: string): string | null {
+  try {
+    const url = new URL(originalUrl, 'http://localhost');
+    return url.searchParams.get(key);
+  } catch {
+    return null;
+  }
+}
+
 // Initialize database schema
 initializeSchema();
 console.log('📦 Database initialized');
@@ -65,6 +85,55 @@ app.use(cors({
   credentials: true,
 }));
 app.use(cookieParser());
+
+// Extra diagnostics for OAuth callback reachability
+if (DEBUG_OAUTH) {
+  app.use((req, res, next) => {
+    const path = req.path;
+    const isOauthRelevant =
+      path === '/api/auth/callback' ||
+      path === '/api/onboarding/auth/callback' ||
+      path === '/api/auth/login' ||
+      path === '/api/onboarding/auth/login' ||
+      path === '/api/auth/me' ||
+      path === '/api/onboarding/auth/me' ||
+      path === '/api/auth/logout' ||
+      path === '/api/onboarding/auth/logout';
+
+    if (!isOauthRelevant) {
+      next();
+      return;
+    }
+
+    const state = getQueryParam(req.originalUrl, 'state');
+    const hasCode = !!getQueryParam(req.originalUrl, 'code');
+    const start = Date.now();
+
+    console.log('[oauth] hit', {
+      method: req.method,
+      url: req.originalUrl,
+      host: req.headers.host,
+      forwardedHost: req.headers['x-forwarded-host'],
+      forwardedProto: req.headers['x-forwarded-proto'],
+      userAgent: req.headers['user-agent'],
+      query: {
+        hasCode,
+        state: mask(state),
+      },
+    });
+
+    res.on('finish', () => {
+      console.log('[oauth] done', {
+        method: req.method,
+        url: req.originalUrl.split('?')[0],
+        status: res.statusCode,
+        ms: Date.now() - start,
+      });
+    });
+
+    next();
+  });
+}
 // Capture raw body for webhook signature verification
 app.use('/api/webhooks', express.json({
   verify: (req, _res, buf) => {
