@@ -4,6 +4,7 @@
  */
 
 import { Router, Request, Response, NextFunction } from 'express';
+import crypto from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db/index.js';
 import type {
@@ -36,6 +37,99 @@ function maskToken(value: string | null | undefined, visible: number = 6): strin
   if (!value) return '<none>';
   if (value.length <= visible) return value;
   return `…${value.slice(-visible)}`;
+}
+
+function base64UrlEncode(buf: Buffer): string {
+  return buf
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function base64UrlEncodeString(value: string): string {
+  return base64UrlEncode(Buffer.from(value, 'utf8'));
+}
+
+function base64UrlDecodeToString(value: string): string {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padLength = (4 - (normalized.length % 4)) % 4;
+  const padded = normalized + '='.repeat(padLength);
+  return Buffer.from(padded, 'base64').toString('utf8');
+}
+
+function base64UrlDecodeToBuffer(value: string): Buffer {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padLength = (4 - (normalized.length % 4)) % 4;
+  const padded = normalized + '='.repeat(padLength);
+  return Buffer.from(padded, 'base64');
+}
+
+function getOAuthStateSecret(): string {
+  const secret = process.env.ENCRYPTION_KEY;
+  if (secret) return secret;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('ENCRYPTION_KEY environment variable is required in production');
+  }
+  return 'action-packer-dev-oauth-state';
+}
+
+function createSignedOAuthState(): string {
+  const payload = {
+    t: Date.now(),
+    n: generateSecret(16),
+    v: 1,
+  };
+
+  const payloadB64 = base64UrlEncodeString(JSON.stringify(payload));
+  const sig = crypto
+    .createHmac('sha256', getOAuthStateSecret())
+    .update(payloadB64)
+    .digest();
+
+  return `${payloadB64}.${base64UrlEncode(sig)}`;
+}
+
+function verifySignedOAuthState(state: string, maxAgeMs: number): { valid: boolean; reason?: string } {
+  const parts = state.split('.');
+  if (parts.length !== 2) return { valid: false, reason: 'not_signed' };
+  const [payloadB64, sigB64] = parts;
+  if (!payloadB64 || !sigB64) return { valid: false, reason: 'malformed' };
+
+  let actualSig: Buffer;
+  try {
+    actualSig = base64UrlDecodeToBuffer(sigB64);
+  } catch {
+    return { valid: false, reason: 'bad_sig_b64' };
+  }
+
+  const expectedSig = crypto
+    .createHmac('sha256', getOAuthStateSecret())
+    .update(payloadB64)
+    .digest();
+
+  if (actualSig.length !== expectedSig.length || !crypto.timingSafeEqual(actualSig, expectedSig)) {
+    return { valid: false, reason: 'bad_sig' };
+  }
+
+  let payloadRaw: string;
+  try {
+    payloadRaw = base64UrlDecodeToString(payloadB64);
+  } catch {
+    return { valid: false, reason: 'bad_payload_b64' };
+  }
+
+  let payload: { t?: number };
+  try {
+    payload = JSON.parse(payloadRaw) as { t?: number };
+  } catch {
+    return { valid: false, reason: 'bad_payload_json' };
+  }
+
+  if (typeof payload.t !== 'number') return { valid: false, reason: 'missing_ts' };
+  if (Date.now() - payload.t > maxAgeMs) return { valid: false, reason: 'expired' };
+
+  return { valid: true };
 }
 
 // ============================================
@@ -565,7 +659,7 @@ function handleOAuthLogin(_req: Request, res: Response, next: NextFunction): voi
 
     // Generate and store state for CSRF protection.
     // Store per-state to allow multiple outstanding login attempts.
-    const state = generateSecret(16);
+    const state = createSignedOAuthState();
 
     // Also store state in an httpOnly cookie so validation works even if the
     // database file differs across environments/instances.
@@ -585,6 +679,7 @@ function handleOAuthLogin(_req: Request, res: Response, next: NextFunction): voi
         baseUrl,
         redirectUri,
         state: maskToken(state),
+        signedState: state.includes('.'),
         cookie: {
           secure: process.env.NODE_ENV === 'production',
           sameSite: 'lax',
@@ -653,7 +748,8 @@ async function handleOAuthCallback(req: Request, res: Response, next: NextFuncti
 
     const legacyExpectedState = getSetting('oauth_state');
     const cookieState = (req as Request & { cookies?: Record<string, string> }).cookies?.oauth_state;
-    const stateValid = state === cookieState || !!stateRow || state === legacyExpectedState;
+    const signed = verifySignedOAuthState(state, 10 * 60 * 1000);
+    const stateValid = signed.valid || state === cookieState || !!stateRow || state === legacyExpectedState;
 
     if (isDebugOAuthEnabled()) {
       const outstandingCount = (
@@ -682,6 +778,8 @@ async function handleOAuthCallback(req: Request, res: Response, next: NextFuncti
         },
         decision: {
           stateValid,
+          signedValid: signed.valid,
+          signedReason: signed.valid ? undefined : signed.reason,
           matched: state === cookieState ? 'cookie' : stateRow ? 'db-key' : state === legacyExpectedState ? 'legacy' : 'none',
         },
       });
@@ -706,6 +804,8 @@ async function handleOAuthCallback(req: Request, res: Response, next: NextFuncti
             legacyExpectedState: maskToken(legacyExpectedState),
             stateKeyExists: !!stateRow,
             outstandingStateKeys: outstandingCount,
+            signedValid: signed.valid,
+            signedReason: signed.valid ? undefined : signed.reason,
           },
         });
         return;
