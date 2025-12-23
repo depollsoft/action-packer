@@ -549,6 +549,10 @@ router.get('/install-url', (_req: Request, res: Response, next: NextFunction) =>
  */
 function handleOAuthLogin(_req: Request, res: Response, next: NextFunction): void {
   try {
+    res.set('Cache-Control', 'no-store');
+    res.set('Pragma', 'no-cache');
+    res.set('Vary', 'Cookie');
+
     const app = getGitHubApp();
 
     if (!app) {
@@ -624,6 +628,10 @@ router.get('/login', handleOAuthLogin);
  */
 async function handleOAuthCallback(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
+    res.set('Cache-Control', 'no-store');
+    res.set('Pragma', 'no-cache');
+    res.set('Vary', 'Cookie');
+
     const { code, state } = req.query;
 
     if (!code || typeof code !== 'string') {
