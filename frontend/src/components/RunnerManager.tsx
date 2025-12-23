@@ -15,23 +15,9 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { runnersApi, credentialsApi } from '../api';
-import type { Runner, RunnerStatus, IsolationType, Credential, SystemInfo } from '../types';
+import type { Runner, IsolationType, Credential, SystemInfo } from '../types';
+import { StatusBadge } from './StatusBadge';
 
-function StatusBadge({ status }: { status: RunnerStatus }) {
-  const config: Record<RunnerStatus, { class: string; label: string }> = {
-    online: { class: 'badge-online', label: 'Online' },
-    offline: { class: 'badge-offline', label: 'Offline' },
-    busy: { class: 'badge-busy', label: 'Busy' },
-    error: { class: 'badge-error', label: 'Error' },
-    pending: { class: 'badge-pending', label: 'Pending' },
-    configuring: { class: 'badge-pending', label: 'Configuring' },
-    removing: { class: 'badge-offline', label: 'Removing' },
-  };
-  
-  const { class: className, label } = config[status] || config.offline;
-  
-  return <span className={className}>{label}</span>;
-}
 
 type RunnerFormData = {
   name: string;

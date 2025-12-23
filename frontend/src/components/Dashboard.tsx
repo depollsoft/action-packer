@@ -5,23 +5,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { Server, Activity, AlertCircle, CheckCircle, Clock, Cpu, Key, Layers } from 'lucide-react';
 import { runnersApi, poolsApi, credentialsApi } from '../api';
-import type { Runner, RunnerStatus } from '../types';
-
-function StatusBadge({ status }: { status: RunnerStatus }) {
-  const config: Record<RunnerStatus, { class: string; label: string }> = {
-    online: { class: 'badge-online', label: 'Online' },
-    offline: { class: 'badge-offline', label: 'Offline' },
-    busy: { class: 'badge-busy', label: 'Busy' },
-    error: { class: 'badge-error', label: 'Error' },
-    pending: { class: 'badge-pending', label: 'Pending' },
-    configuring: { class: 'badge-pending', label: 'Configuring' },
-    removing: { class: 'badge-offline', label: 'Removing' },
-  };
-  
-  const { class: className, label } = config[status] || config.offline;
-  
-  return <span className={className}>{label}</span>;
-}
+import type { Runner } from '../types';
+import { StatusBadge } from './StatusBadge';
 
 function StatCard({
   title,
