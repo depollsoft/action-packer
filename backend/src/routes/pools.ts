@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { db, type RunnerPoolRow, type CredentialRow } from '../db/index.js';
 import { decrypt, generateSecret } from '../utils/index.js';
 import { createGitHubClient, type GitHubScope } from '../services/index.js';
+import { ensureWarmRunners, getPoolById as getPoolRowById } from '../services/autoscaler.js';
 
 export const poolsRouter = Router();
 
@@ -206,6 +207,14 @@ poolsRouter.post('/', async (req: Request, res: Response) => {
       warmRunners,
       idleTimeoutMinutes
     );
+
+    // Fire-and-forget: ensure warm runners exist (skip during tests)
+    if (process.env.NODE_ENV !== 'test' && warmRunners > 0) {
+      const createdPoolRow = getPoolRowById(id);
+      if (createdPoolRow && createdPoolRow.enabled) {
+        void ensureWarmRunners(createdPoolRow);
+      }
+    }
     
     const pool = getPoolWithStats.get(id) as any;
     res.status(201).json({
@@ -265,6 +274,14 @@ poolsRouter.patch('/:id', async (req: Request, res: Response) => {
     // Update enabled if provided
     if (body.enabled !== undefined) {
       updatePoolEnabled.run(body.enabled ? 1 : 0, req.params.id);
+    }
+
+    // Fire-and-forget: if the pool is enabled and has warm_runners, ensure they're created.
+    if (process.env.NODE_ENV !== 'test') {
+      const updatedPoolRow = getPoolRowById(req.params.id);
+      if (updatedPoolRow && updatedPoolRow.enabled && updatedPoolRow.warm_runners > 0) {
+        void ensureWarmRunners(updatedPoolRow);
+      }
     }
     
     const updated = getPoolWithStats.get(req.params.id) as any;

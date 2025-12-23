@@ -28,6 +28,17 @@ db.pragma('foreign_keys = ON');
  * Initialize database schema
  */
 function initializeSchemaImpl(): void {
+  function hasColumn(table: string, column: string): boolean {
+    // Table names are internal constants, not user input.
+    const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    return rows.some(r => r.name === column);
+  }
+
+  function addColumnIfMissing(table: string, column: string, definition: string): void {
+    if (hasColumn(table, column)) return;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+  }
+
   // App settings table - stores GitHub App configuration and onboarding state
   db.exec(`
     CREATE TABLE IF NOT EXISTS app_settings (
@@ -123,6 +134,20 @@ function initializeSchemaImpl(): void {
       UNIQUE(scope, target)
     )
   `);
+
+  // Migrations for existing databases (CREATE TABLE IF NOT EXISTS does not add columns)
+  addColumnIfMissing('credentials', 'installation_id', 'installation_id INTEGER');
+
+  // Legacy GitHub App schema migrations
+  // Older databases may have a github_app table without the newer per-field IV/auth columns.
+  addColumnIfMissing('github_app', 'client_secret_iv', 'client_secret_iv TEXT');
+  addColumnIfMissing('github_app', 'client_secret_auth_tag', 'client_secret_auth_tag TEXT');
+  addColumnIfMissing('github_app', 'encrypted_private_key', 'encrypted_private_key TEXT');
+  addColumnIfMissing('github_app', 'private_key_iv', 'private_key_iv TEXT');
+  addColumnIfMissing('github_app', 'private_key_auth_tag', 'private_key_auth_tag TEXT');
+  addColumnIfMissing('github_app', 'encrypted_webhook_secret', 'encrypted_webhook_secret TEXT');
+  addColumnIfMissing('github_app', 'webhook_secret_iv', 'webhook_secret_iv TEXT');
+  addColumnIfMissing('github_app', 'webhook_secret_auth_tag', 'webhook_secret_auth_tag TEXT');
 
   // Runners table - stores runner configurations and status
   db.exec(`
