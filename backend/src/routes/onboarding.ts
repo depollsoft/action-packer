@@ -74,6 +74,12 @@ function getOAuthStateSecret(): string {
   return 'action-packer-dev-oauth-state';
 }
 
+function getOAuthStateSecretFingerprint(): string {
+  const secret = getOAuthStateSecret();
+  // Fingerprint only; does not reveal the secret.
+  return crypto.createHash('sha256').update(secret).digest('hex').slice(0, 10);
+}
+
 function createSignedOAuthState(): string {
   const payload = {
     t: Date.now(),
@@ -680,6 +686,7 @@ function handleOAuthLogin(_req: Request, res: Response, next: NextFunction): voi
         redirectUri,
         state: maskToken(state),
         signedState: state.includes('.'),
+        secretFp: getOAuthStateSecretFingerprint(),
         cookie: {
           secure: process.env.NODE_ENV === 'production',
           sameSite: 'lax',
@@ -782,6 +789,7 @@ async function handleOAuthCallback(req: Request, res: Response, next: NextFuncti
           signedReason: signed.valid ? undefined : signed.reason,
           matched: state === cookieState ? 'cookie' : stateRow ? 'db-key' : state === legacyExpectedState ? 'legacy' : 'none',
         },
+        secretFp: getOAuthStateSecretFingerprint(),
       });
     }
 
@@ -806,6 +814,7 @@ async function handleOAuthCallback(req: Request, res: Response, next: NextFuncti
             outstandingStateKeys: outstandingCount,
             signedValid: signed.valid,
             signedReason: signed.valid ? undefined : signed.reason,
+            secretFp: getOAuthStateSecretFingerprint(),
           },
         });
         return;
