@@ -28,6 +28,16 @@ import {
 
 const router = Router();
 
+function isDebugOAuthEnabled(): boolean {
+  return process.env.DEBUG_OAUTH === '1' || process.env.DEBUG_OAUTH === 'true';
+}
+
+function maskToken(value: string | null | undefined, visible: number = 6): string {
+  if (!value) return '<none>';
+  if (value.length <= visible) return value;
+  return `…${value.slice(-visible)}`;
+}
+
 // ============================================
 // Settings Helpers
 // ============================================
@@ -563,6 +573,23 @@ function handleOAuthLogin(_req: Request, res: Response, next: NextFunction): voi
       path: '/api',
     });
 
+    if (isDebugOAuthEnabled()) {
+      console.log('[oauth] /login', {
+        host: _req.headers.host,
+        forwardedHost: _req.headers['x-forwarded-host'],
+        forwardedProto: _req.headers['x-forwarded-proto'],
+        baseUrl,
+        redirectUri,
+        state: maskToken(state),
+        cookie: {
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          path: '/api',
+          maxAgeMs: 10 * 60 * 1000,
+        },
+      });
+    }
+
     // Best-effort cleanup of old states
     db.prepare(
       "DELETE FROM app_settings WHERE key LIKE 'oauth_state:%' AND updated_at < datetime('now', '-2 hours')"
@@ -620,7 +647,62 @@ async function handleOAuthCallback(req: Request, res: Response, next: NextFuncti
     const cookieState = (req as Request & { cookies?: Record<string, string> }).cookies?.oauth_state;
     const stateValid = state === cookieState || !!stateRow || state === legacyExpectedState;
 
+    if (isDebugOAuthEnabled()) {
+      const outstandingCount = (
+        db
+          .prepare("SELECT COUNT(*) as count FROM app_settings WHERE key LIKE 'oauth_state:%'")
+          .get() as { count: number }
+      ).count;
+
+      console.log('[oauth] /callback', {
+        host: req.headers.host,
+        forwardedHost: req.headers['x-forwarded-host'],
+        forwardedProto: req.headers['x-forwarded-proto'],
+        url: req.originalUrl,
+        query: {
+          hasCode: typeof code === 'string' && code.length > 0,
+          state: maskToken(typeof state === 'string' ? state : null),
+        },
+        cookies: {
+          hasOAuthStateCookie: !!cookieState,
+          oauthStateCookie: maskToken(cookieState ?? null),
+        },
+        db: {
+          stateKeyExists: !!stateRow,
+          outstandingStateKeys: outstandingCount,
+          legacyExpectedState: maskToken(legacyExpectedState),
+        },
+        decision: {
+          stateValid,
+          matched: state === cookieState ? 'cookie' : stateRow ? 'db-key' : state === legacyExpectedState ? 'legacy' : 'none',
+        },
+      });
+    }
+
     if (!stateValid) {
+      if (isDebugOAuthEnabled()) {
+        const outstandingCount = (
+          db
+            .prepare("SELECT COUNT(*) as count FROM app_settings WHERE key LIKE 'oauth_state:%'")
+            .get() as { count: number }
+        ).count;
+
+        res.status(400).json({
+          error: 'Invalid state parameter',
+          debug: {
+            host: req.headers.host,
+            forwardedHost: req.headers['x-forwarded-host'],
+            forwardedProto: req.headers['x-forwarded-proto'],
+            state: maskToken(state),
+            cookieState: maskToken(cookieState ?? null),
+            legacyExpectedState: maskToken(legacyExpectedState),
+            stateKeyExists: !!stateRow,
+            outstandingStateKeys: outstandingCount,
+          },
+        });
+        return;
+      }
+
       res.status(400).json({ error: 'Invalid state parameter' });
       return;
     }
