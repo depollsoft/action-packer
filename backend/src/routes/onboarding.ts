@@ -350,24 +350,25 @@ githubAppRouter.get('/callback', handleGitHubAppManifestCallback);
  * Store GitHub App credentials in the database
  */
 async function storeGitHubAppCredentials(credentials: GitHubAppCredentials): Promise<void> {
-  // Encrypt sensitive values
+  // Encrypt sensitive values - each gets its own IV/authTag
   const encryptedClientSecret = encrypt(credentials.client_secret);
   const encryptedPrivateKey = encrypt(credentials.pem);
   const encryptedWebhookSecret = encrypt(credentials.webhook_secret);
 
-  // Use a single IV/authTag for all encrypted fields (they're decrypted together)
-  // In a more complex system, you might use separate encryption for each field
-
   db.prepare(
     `INSERT OR REPLACE INTO github_app (
       id, app_id, app_slug, app_name, client_id,
-      encrypted_client_secret, encrypted_private_key, encrypted_webhook_secret,
-      iv, auth_tag, owner_login, owner_id, owner_type, html_url,
+      encrypted_client_secret, client_secret_iv, client_secret_auth_tag,
+      encrypted_private_key, private_key_iv, private_key_auth_tag,
+      encrypted_webhook_secret, webhook_secret_iv, webhook_secret_auth_tag,
+      owner_login, owner_id, owner_type, html_url,
       permissions, events, updated_at
     ) VALUES (
       1, ?, ?, ?, ?,
       ?, ?, ?,
-      ?, ?, ?, ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?, ?,
       ?, ?, datetime('now')
     )`
   ).run(
@@ -376,10 +377,14 @@ async function storeGitHubAppCredentials(credentials: GitHubAppCredentials): Pro
     credentials.name,
     credentials.client_id,
     encryptedClientSecret.encrypted,
+    encryptedClientSecret.iv,
+    encryptedClientSecret.authTag,
     encryptedPrivateKey.encrypted,
-    encryptedWebhookSecret.encrypted,
-    encryptedPrivateKey.iv, // Use the IV from private key encryption
+    encryptedPrivateKey.iv,
     encryptedPrivateKey.authTag,
+    encryptedWebhookSecret.encrypted,
+    encryptedWebhookSecret.iv,
+    encryptedWebhookSecret.authTag,
     credentials.owner.login,
     credentials.owner.id,
     credentials.owner.type || 'User',
@@ -431,13 +436,17 @@ router.post(
         db.prepare(
           `INSERT OR REPLACE INTO github_app (
             id, app_id, app_slug, app_name, client_id,
-            encrypted_client_secret, encrypted_private_key, encrypted_webhook_secret,
-            iv, auth_tag, owner_login, owner_id, owner_type, html_url,
+            encrypted_client_secret, client_secret_iv, client_secret_auth_tag,
+            encrypted_private_key, private_key_iv, private_key_auth_tag,
+            encrypted_webhook_secret, webhook_secret_iv, webhook_secret_auth_tag,
+            owner_login, owner_id, owner_type, html_url,
             permissions, events, updated_at
           ) VALUES (
             1, ?, ?, ?, ?,
             ?, ?, ?,
-            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?,
+            ?, ?, ?,
+            ?, ?, ?, ?,
             ?, ?, datetime('now')
           )`
         ).run(
@@ -446,10 +455,14 @@ router.post(
           appName || appInfo.name,
           clientId,
           encryptedClientSecret.encrypted,
+          encryptedClientSecret.iv,
+          encryptedClientSecret.authTag,
           encryptedPrivateKey.encrypted,
-          encryptedWebhookSecret.encrypted,
           encryptedPrivateKey.iv,
           encryptedPrivateKey.authTag,
+          encryptedWebhookSecret.encrypted,
+          encryptedWebhookSecret.iv,
+          encryptedWebhookSecret.authTag,
           appInfo.owner.login,
           appInfo.owner.id,
           'User', // Default, will be updated when we have more info
@@ -551,8 +564,8 @@ router.get('/installations', async (req: Request, res: Response, next: NextFunct
       // Fetch fresh installations from GitHub
       const privateKey = decrypt({
         encrypted: app.encrypted_private_key,
-        iv: app.iv,
-        authTag: app.auth_tag,
+        iv: app.private_key_iv,
+        authTag: app.private_key_auth_tag,
       });
 
       const appJwt = generateAppJWT(privateKey, app.client_id);
@@ -847,8 +860,8 @@ async function handleOAuthCallback(req: Request, res: Response, next: NextFuncti
     // Decrypt client secret
     const clientSecret = decrypt({
       encrypted: app.encrypted_client_secret,
-      iv: app.iv,
-      authTag: app.auth_tag,
+      iv: app.client_secret_iv,
+      authTag: app.client_secret_auth_tag,
     });
 
     const baseUrl = getSetting('base_url') || '';
@@ -1064,8 +1077,8 @@ router.get('/install-complete', async (req: Request, res: Response, next: NextFu
       if (app) {
         const privateKey = decrypt({
           encrypted: app.encrypted_private_key,
-          iv: app.iv,
-          authTag: app.auth_tag,
+          iv: app.private_key_iv,
+          authTag: app.private_key_auth_tag,
         });
 
         const appJwt = generateAppJWT(privateKey, app.client_id);

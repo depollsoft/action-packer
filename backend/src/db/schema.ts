@@ -47,10 +47,17 @@ function initializeSchemaImpl(): void {
       app_name TEXT NOT NULL,
       client_id TEXT NOT NULL,
       encrypted_client_secret TEXT NOT NULL,
+      client_secret_iv TEXT NOT NULL,
+      client_secret_auth_tag TEXT NOT NULL,
       encrypted_private_key TEXT NOT NULL,
+      private_key_iv TEXT NOT NULL,
+      private_key_auth_tag TEXT NOT NULL,
       encrypted_webhook_secret TEXT NOT NULL,
-      iv TEXT NOT NULL,
-      auth_tag TEXT NOT NULL,
+      webhook_secret_iv TEXT NOT NULL,
+      webhook_secret_auth_tag TEXT NOT NULL,
+      -- Legacy columns for backwards compatibility (no longer used)
+      iv TEXT,
+      auth_tag TEXT,
       owner_login TEXT NOT NULL,
       owner_id INTEGER NOT NULL,
       owner_type TEXT NOT NULL DEFAULT 'User',
@@ -231,10 +238,14 @@ export type GitHubAppRow = {
   app_name: string;
   client_id: string;
   encrypted_client_secret: string;
+  client_secret_iv: string;
+  client_secret_auth_tag: string;
   encrypted_private_key: string;
+  private_key_iv: string;
+  private_key_auth_tag: string;
   encrypted_webhook_secret: string;
-  iv: string;
-  auth_tag: string;
+  webhook_secret_iv: string;
+  webhook_secret_auth_tag: string;
   owner_login: string;
   owner_id: number;
   owner_type: 'User' | 'Organization';
