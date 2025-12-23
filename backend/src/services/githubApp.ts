@@ -576,4 +576,32 @@ export class GitHubAppClient {
       return { valid: false, error: message };
     }
   }
+  
+  /**
+   * List repositories accessible to this installation
+   */
+  async listRepositories(): Promise<Array<{ id: number; name: string; full_name: string; owner: string }>> {
+    const octokit = await this.getOctokit();
+    const repos: Array<{ id: number; name: string; full_name: string; owner: string }> = [];
+    
+    try {
+      for await (const response of octokit.paginate.iterator(
+        octokit.rest.apps.listReposAccessibleToInstallation,
+        { per_page: 100 }
+      )) {
+        for (const repo of response.data) {
+          repos.push({
+            id: repo.id,
+            name: repo.name,
+            full_name: repo.full_name,
+            owner: repo.owner.login,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Failed to list installation repositories:', error);
+    }
+    
+    return repos;
+  }
 }

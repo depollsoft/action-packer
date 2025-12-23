@@ -23,6 +23,7 @@ import {
   getOAuthAuthorizationUrl,
   exchangeOAuthCode,
   getAuthenticatedUser,
+  GitHubAppClient,
   type GitHubAppCredentials,
   type GitHubAppInstallation,
 } from '../services/githubApp.js';
@@ -168,48 +169,114 @@ function getGitHubApp(): GitHubAppRow | null {
 
 /**
  * Create or get an existing credential for a GitHub App installation
+ * For Organization installations: creates one org-level credential
+ * For User installations: creates per-repo credentials for each accessible repository
  */
-function ensureCredentialForInstallation(installation: {
+async function ensureCredentialsForInstallation(installation: {
   id: number;
   target_type: 'User' | 'Organization';
   account_login: string;
-}): string {
-  // Check if credential already exists for this installation
-  const existing = db
-    .prepare('SELECT id FROM credentials WHERE installation_id = ?')
-    .get(installation.id) as { id: string } | undefined;
-
-  if (existing) {
-    return existing.id;
+}): Promise<string[]> {
+  const githubApp = getGitHubApp();
+  if (!githubApp) {
+    console.error('GitHub App not configured, cannot create credentials');
+    return [];
   }
 
-  // Create new credential
-  // Both User and Organization installations use 'org' scope because:
-  // - Organization: access to org-level runners
-  // - User: access to all user's repos (similar to org-level access)
-  // The 'repo' scope is only for single-repo PATs with owner/repo format
-  const credentialId = uuidv4();
-  const scope = 'org';
-  const name = `GitHub App: ${installation.account_login}`;
-  const placeholderToken = `gha:${installation.id}`;
-  const encryptedToken = encrypt(placeholderToken);
+  const credentialIds: string[] = [];
 
-  db.prepare(
-    `INSERT INTO credentials (
-      id, name, type, scope, target, encrypted_token, iv, auth_tag, installation_id, validated_at
-    ) VALUES (?, ?, 'github_app', ?, ?, ?, ?, ?, ?, datetime('now'))`
-  ).run(
-    credentialId,
-    name,
-    scope,
-    installation.account_login,
-    encryptedToken.encrypted,
-    encryptedToken.iv,
-    encryptedToken.authTag,
-    installation.id
-  );
+  if (installation.target_type === 'Organization') {
+    // For organizations, create/get a single org-level credential
+    const existing = db
+      .prepare('SELECT id FROM credentials WHERE installation_id = ? AND scope = ?')
+      .get(installation.id, 'org') as { id: string } | undefined;
 
-  return credentialId;
+    if (existing) {
+      return [existing.id];
+    }
+
+    const credentialId = uuidv4();
+    const name = `GitHub App: ${installation.account_login}`;
+    const placeholderToken = `gha:${installation.id}`;
+    const encryptedToken = encrypt(placeholderToken);
+
+    db.prepare(
+      `INSERT INTO credentials (
+        id, name, type, scope, target, encrypted_token, iv, auth_tag, installation_id, validated_at
+      ) VALUES (?, ?, 'github_app', 'org', ?, ?, ?, ?, ?, datetime('now'))`
+    ).run(
+      credentialId,
+      name,
+      installation.account_login,
+      encryptedToken.encrypted,
+      encryptedToken.iv,
+      encryptedToken.authTag,
+      installation.id
+    );
+
+    return [credentialId];
+  }
+
+  // For User installations, create credentials per repository
+  try {
+    const privateKey = decrypt({
+      encrypted: githubApp.encrypted_private_key,
+      iv: githubApp.private_key_iv,
+      authTag: githubApp.private_key_auth_tag,
+    });
+
+    const appClient = new GitHubAppClient({
+      privateKey,
+      clientId: githubApp.client_id,
+      appId: githubApp.app_id,
+      installationId: installation.id,
+    });
+
+    const repos = await appClient.listRepositories();
+    
+    if (repos.length === 0) {
+      console.warn(`No repositories found for User installation ${installation.id}`);
+      return [];
+    }
+
+    for (const repo of repos) {
+      // Check if credential already exists for this repo
+      const existing = db
+        .prepare('SELECT id FROM credentials WHERE installation_id = ? AND target = ?')
+        .get(installation.id, repo.full_name) as { id: string } | undefined;
+
+      if (existing) {
+        credentialIds.push(existing.id);
+        continue;
+      }
+
+      // Create new credential for this repo
+      const credentialId = uuidv4();
+      const name = `GitHub App: ${repo.full_name}`;
+      const placeholderToken = `gha:${installation.id}`;
+      const encryptedToken = encrypt(placeholderToken);
+
+      db.prepare(
+        `INSERT INTO credentials (
+          id, name, type, scope, target, encrypted_token, iv, auth_tag, installation_id, validated_at
+        ) VALUES (?, ?, 'github_app', 'repo', ?, ?, ?, ?, ?, datetime('now'))`
+      ).run(
+        credentialId,
+        name,
+        repo.full_name,
+        encryptedToken.encrypted,
+        encryptedToken.iv,
+        encryptedToken.authTag,
+        installation.id
+      );
+
+      credentialIds.push(credentialId);
+    }
+  } catch (error) {
+    console.error(`Failed to create credentials for User installation ${installation.id}:`, error);
+  }
+
+  return credentialIds;
 }
 
 // ============================================
@@ -637,8 +704,8 @@ router.get('/installations', async (req: Request, res: Response, next: NextFunct
           installation.suspended_at
         );
 
-        // Auto-create credential for this installation
-        ensureCredentialForInstallation({
+        // Auto-create credentials for this installation (async for User installations)
+        await ensureCredentialsForInstallation({
           id: installation.id,
           target_type: installation.target_type,
           account_login: installation.account.login,
@@ -662,9 +729,9 @@ router.get('/installations', async (req: Request, res: Response, next: NextFunct
       .prepare('SELECT * FROM github_app_installations ORDER BY account_login')
       .all() as GitHubAppInstallationRow[];
 
-    const installations = rows.map((row) => {
-      // Get or create credential for this installation
-      const credentialId = ensureCredentialForInstallation({
+    const installationsWithCreds = await Promise.all(rows.map(async (row) => {
+      // Get or create credentials for this installation
+      const credentialIds = await ensureCredentialsForInstallation({
         id: row.id,
         target_type: row.target_type as 'User' | 'Organization',
         account_login: row.account_login,
@@ -685,11 +752,12 @@ router.get('/installations', async (req: Request, res: Response, next: NextFunct
         suspendedAt: row.suspended_at,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
-        credentialId,
+        credentialId: credentialIds[0], // Keep first for backward compat
+        credentialIds,
       };
-    });
+    }));
 
-    res.json({ installations });
+    res.json({ installations: installationsWithCreds });
   } catch (error) {
     next(error);
   }
@@ -1190,10 +1258,10 @@ router.get('/install-complete', async (req: Request, res: Response, next: NextFu
  * Handle installation webhook events
  * Called from the main webhooks router
  */
-export function handleInstallationWebhook(
+export async function handleInstallationWebhook(
   action: string,
   installation: GitHubAppInstallation
-): void {
+): Promise<void> {
   if (action === 'created') {
     db.prepare(
       `INSERT OR REPLACE INTO github_app_installations (
@@ -1213,14 +1281,14 @@ export function handleInstallationWebhook(
       installation.suspended_at
     );
 
-    // Auto-create credential for this installation
-    ensureCredentialForInstallation({
+    // Auto-create credentials for this installation (per-repo for User installations)
+    await ensureCredentialsForInstallation({
       id: installation.id,
       target_type: installation.target_type,
       account_login: installation.account.login,
     });
   } else if (action === 'deleted') {
-    // Delete associated credential
+    // Delete associated credentials (there may be multiple for User installations)
     db.prepare('DELETE FROM credentials WHERE installation_id = ?').run(
       installation.id
     );
