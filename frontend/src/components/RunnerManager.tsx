@@ -13,10 +13,12 @@ import {
   RefreshCw,
   Cpu,
   AlertCircle,
+  ScrollText,
 } from 'lucide-react';
 import { runnersApi, credentialsApi } from '../api';
 import type { Runner, IsolationType, Credential, SystemInfo } from '../types';
 import { StatusBadge } from './StatusBadge';
+import { RunnerLogsModal } from './RunnerLogsModal';
 
 
 type RunnerFormData = {
@@ -234,12 +236,14 @@ function RunnerRow({
   onStop,
   onSync,
   onDelete,
+  onViewLogs,
 }: {
   runner: Runner;
   onStart: (id: string) => void;
   onStop: (id: string) => void;
   onSync: (id: string) => void;
   onDelete: (id: string) => void;
+  onViewLogs: (runner: Runner) => void;
 }) {
   const platformIcons: Record<string, string> = {
     darwin: '🍎',
@@ -257,6 +261,7 @@ function RunnerRow({
   
   const canStart = runner.status === 'offline';
   const canStop = runner.status === 'online' || runner.status === 'busy';
+  const canViewLogs = runner.isolation_type === 'docker' || runner.runner_dir;
   
   return (
     <tr>
@@ -326,6 +331,15 @@ function RunnerRow({
               <Square className="h-4 w-4" />
             </button>
           )}
+          {canViewLogs && (
+            <button
+              onClick={() => onViewLogs(runner)}
+              className="btn btn-ghost btn-sm text-blue-400"
+              title="View logs"
+            >
+              <ScrollText className="h-4 w-4" />
+            </button>
+          )}
           <button
             onClick={() => onSync(runner.id)}
             className="btn btn-ghost btn-sm"
@@ -348,6 +362,7 @@ function RunnerRow({
 
 export function RunnerManager() {
   const [showAddForm, setShowAddForm] = useState(false);
+  const [selectedRunnerForLogs, setSelectedRunnerForLogs] = useState<Runner | null>(null);
   const queryClient = useQueryClient();
   
   const { data: runnersData, isLoading: runnersLoading } = useQuery({
@@ -457,6 +472,7 @@ export function RunnerManager() {
                   onStop={stopMutation.mutate}
                   onSync={syncMutation.mutate}
                   onDelete={handleDelete}
+                  onViewLogs={(runner) => setSelectedRunnerForLogs(runner)}
                 />
               ))}
             </tbody>
@@ -473,6 +489,14 @@ export function RunnerManager() {
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ['runners'] });
           }}
+        />
+      )}
+
+      {/* Runner Logs Modal */}
+      {selectedRunnerForLogs && (
+        <RunnerLogsModal
+          runner={selectedRunnerForLogs}
+          onClose={() => setSelectedRunnerForLogs(null)}
         />
       )}
     </div>

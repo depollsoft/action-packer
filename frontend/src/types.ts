@@ -192,7 +192,37 @@ export type AuthUser = {
 
 // WebSocket message types
 export type WebSocketMessage = {
-  type: 'runner_update' | 'pool_update' | 'credential_update';
+  type: 'runner_update' | 'pool_update' | 'credential_update' | 'log_entry';
   data: unknown;
   timestamp: string;
+};
+
+// Logs types
+export type LogLevel = 'info' | 'warn' | 'error' | 'debug';
+
+export type LogEntry = {
+  id: number;
+  timestamp: string;
+  level: LogLevel;
+  message: string;
+  source: string;
+};
+
+export type LogsResponse = {
+  logs: LogEntry[];
+  lastId: number;
+};
+
+export type RunnerLogEntry = {
+  timestamp: string;
+  message: string;
+  stream?: 'stdout' | 'stderr';
+};
+
+export type RunnerLogsResponse = {
+  logs: RunnerLogEntry[];
+  type: 'docker' | 'native';
+  containerId?: string;
+  runnerDir?: string;
+  message?: string;
 };

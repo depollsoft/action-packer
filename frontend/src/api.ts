@@ -310,3 +310,22 @@ export const onboardingApi = {
 export const healthApi = {
   check: () => request<{ status: string; timestamp: string; uptime: number }>('/health'),
 };
+
+// Logs API
+export const logsApi = {
+  list: (params?: { limit?: number; since?: number; level?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.limit) searchParams.set('limit', params.limit.toString());
+    if (params?.since) searchParams.set('since', params.since.toString());
+    if (params?.level) searchParams.set('level', params.level);
+    const query = searchParams.toString();
+    return request<import('./types').LogsResponse>(`/api/logs${query ? `?${query}` : ''}`);
+  },
+
+  getRunnerLogs: (id: string, params?: { tail?: number }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.tail) searchParams.set('tail', params.tail.toString());
+    const query = searchParams.toString();
+    return request<import('./types').RunnerLogsResponse>(`/api/logs/runner/${id}${query ? `?${query}` : ''}`);
+  },
+};

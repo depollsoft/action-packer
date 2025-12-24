@@ -14,6 +14,7 @@ import { runnersRouter } from './routes/runners.js';
 import { poolsRouter } from './routes/pools.js';
 import { webhooksRouter } from './routes/webhooks.js';
 import { onboardingRouter, authRouter, githubAppRouter } from './routes/onboarding.js';
+import { logsRouter } from './routes/logs.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { requireAuth } from './middleware/auth.js';
 import { initializeSchema, db } from './db/index.js';
@@ -151,6 +152,8 @@ app.use('/api', apiRouter);
 app.use('/api/credentials', requireAuth, credentialsRouter);
 app.use('/api/runners', requireAuth, runnersRouter);
 app.use('/api/pools', requireAuth, poolsRouter);
+// Logs require authentication
+app.use('/api/logs', requireAuth, logsRouter);
 // Webhooks don't require user auth (they use webhook secret verification)
 app.use('/api/webhooks', webhooksRouter);
 // Onboarding and auth routes handle their own auth logic

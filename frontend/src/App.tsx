@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { Layout, Dashboard, CredentialManager, RunnerManager, PoolManager, OnboardingWizard, LoginPage } from './components';
+import { LogViewer } from './components/LogViewer';
 import { useWebSocket, AuthProvider, useAuth } from './hooks';
 import { onboardingApi } from './api';
 import type { SetupStatus } from './types';
@@ -14,25 +16,42 @@ const queryClient = new QueryClient({
   },
 });
 
-export type Page = 'dashboard' | 'credentials' | 'runners' | 'pools' | 'settings';
+export type Page = 'dashboard' | 'credentials' | 'runners' | 'pools' | 'settings' | 'logs';
+
+// Map URL paths to page names
+const pathToPage: Record<string, Page> = {
+  '/': 'dashboard',
+  '/dashboard': 'dashboard',
+  '/credentials': 'credentials',
+  '/runners': 'runners',
+  '/pools': 'pools',
+  '/settings': 'settings',
+  '/logs': 'logs',
+};
+
+// Map page names to URL paths
+const pageToPath: Record<Page, string> = {
+  dashboard: '/dashboard',
+  credentials: '/credentials',
+  runners: '/runners',
+  pools: '/pools',
+  settings: '/settings',
+  logs: '/logs',
+};
 
 function AppContent() {
-  const [currentPage, setCurrentPage] = useState<Page>('dashboard');
-  const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
   const { isConnected, lastMessage } = useWebSocket();
+
+  // Determine current page from URL
+  const currentPage = pathToPage[location.pathname] || 'dashboard';
 
   // Check setup status
   const { data: setupStatus, isLoading: isLoadingStatus } = useQuery<SetupStatus>({
     queryKey: ['setup-status'],
     queryFn: () => onboardingApi.getStatus(),
   });
-
-  // Determine if we should show onboarding
-  useEffect(() => {
-    if (setupStatus !== undefined) {
-      setShowOnboarding(!setupStatus.isComplete);
-    }
-  }, [setupStatus]);
 
   // Handle WebSocket messages for real-time updates
   useEffect(() => {
@@ -50,16 +69,15 @@ function AppContent() {
   }, [lastMessage]);
 
   const handlePageChange = (page: string) => {
-    setCurrentPage(page as Page);
+    navigate(pageToPath[page as Page] || '/dashboard');
   };
 
   const handleOnboardingComplete = () => {
-    setShowOnboarding(false);
     queryClient.invalidateQueries({ queryKey: ['setup-status'] });
   };
 
   // Show loading state while checking setup status
-  if (isLoadingStatus || showOnboarding === null) {
+  if (isLoadingStatus || setupStatus === undefined) {
     return (
       <div className="min-h-screen bg-forest-900 flex items-center justify-center">
         <div className="text-center">
@@ -71,13 +89,13 @@ function AppContent() {
   }
 
   // Show onboarding wizard if setup is not complete
-  if (showOnboarding) {
+  if (!setupStatus.isComplete) {
     return <OnboardingWizard onComplete={handleOnboardingComplete} />;
   }
 
   // After onboarding is complete, require authentication
   return (
-    <AuthProvider setupComplete={!showOnboarding}>
+    <AuthProvider setupComplete={setupStatus.isComplete}>
       <AuthenticatedApp
         currentPage={currentPage}
         onPageChange={handlePageChange}
@@ -113,23 +131,6 @@ function AuthenticatedApp({ currentPage, onPageChange, isConnected }: Authentica
     return <LoginPage error={error} onClearError={clearError} />;
   }
 
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'dashboard':
-        return <Dashboard />;
-      case 'credentials':
-        return <CredentialManager />;
-      case 'runners':
-        return <RunnerManager />;
-      case 'pools':
-        return <PoolManager />;
-      case 'settings':
-        return <SettingsPage />;
-      default:
-        return <Dashboard />;
-    }
-  };
-
   return (
     <Layout
       currentPage={currentPage}
@@ -137,7 +138,16 @@ function AuthenticatedApp({ currentPage, onPageChange, isConnected }: Authentica
       isConnected={isConnected}
       user={user}
     >
-      {renderPage()}
+      <Routes>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/credentials" element={<CredentialManager />} />
+        <Route path="/runners" element={<RunnerManager />} />
+        <Route path="/pools" element={<PoolManager />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/logs" element={<LogViewer />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
     </Layout>
   );
 }
@@ -199,7 +209,9 @@ function SettingsPage() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AppContent />
+      <BrowserRouter>
+        <AppContent />
+      </BrowserRouter>
     </QueryClientProvider>
   );
 }

@@ -13,6 +13,7 @@ import {
   X,
   Activity,
   LogOut,
+  ScrollText,
 } from 'lucide-react';
 import type { AuthUser } from '../types';
 
@@ -27,6 +28,7 @@ const navItems: NavItem[] = [
   { id: 'credentials', label: 'Credentials', icon: Key },
   { id: 'runners', label: 'Runners', icon: Server },
   { id: 'pools', label: 'Runner Pools', icon: Layers },
+  { id: 'logs', label: 'Logs', icon: ScrollText },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
