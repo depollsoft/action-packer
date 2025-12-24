@@ -110,7 +110,7 @@ Write-Host "Setting up environment..." -ForegroundColor Cyan
 $RootEnvFile = Join-Path $ProjectDir ".env"
 $BackendEnvFile = Join-Path $ProjectDir "backend\.env"
 
-# Check for existing .env in root (preferred) or backend folder
+# Check for existing .env in root or backend folder
 if (Test-Path $RootEnvFile) {
     Write-StatusMessage "Using existing environment file at $RootEnvFile"
     Write-InfoMessage "Your existing configuration will be preserved."

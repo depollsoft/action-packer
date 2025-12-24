@@ -113,7 +113,7 @@ setup_environment() {
     ROOT_ENV_FILE="$PROJECT_DIR/.env"
     BACKEND_ENV_FILE="$PROJECT_DIR/backend/.env"
     
-    # Check for existing .env in root (preferred) or backend folder
+    # Check for existing .env in root or backend folder
     if [ -f "$ROOT_ENV_FILE" ]; then
         print_status "Using existing environment file at $ROOT_ENV_FILE"
         print_info "Your existing configuration will be preserved."
