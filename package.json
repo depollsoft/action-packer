@@ -15,7 +15,10 @@
     "start": "NODE_ENV=production npm run start:prod -w backend",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present"
+    "lint": "npm run lint --workspaces --if-present",
+    "install:service": "./scripts/install.sh",
+    "uninstall:service": "./scripts/uninstall.sh",
+    "service": "./scripts/service.sh"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
