@@ -13,10 +13,10 @@
 $ErrorActionPreference = "Stop"
 
 # Colors and formatting
-function Write-Status { param($Message) Write-Host "✓ " -ForegroundColor Green -NoNewline; Write-Host $Message }
-function Write-Warning { param($Message) Write-Host "⚠ " -ForegroundColor Yellow -NoNewline; Write-Host $Message }
-function Write-Error { param($Message) Write-Host "✗ " -ForegroundColor Red -NoNewline; Write-Host $Message }
-function Write-Info { param($Message) Write-Host "ℹ " -ForegroundColor Cyan -NoNewline; Write-Host $Message }
+function Write-StatusMessage { param($Message) Write-Host "✓ " -ForegroundColor Green -NoNewline; Write-Host $Message }
+function Write-WarningMessage { param($Message) Write-Host "⚠ " -ForegroundColor Yellow -NoNewline; Write-Host $Message }
+function Write-ErrorMessage { param($Message) Write-Host "✗ " -ForegroundColor Red -NoNewline; Write-Host $Message }
+function Write-InfoMessage { param($Message) Write-Host "ℹ " -ForegroundColor Cyan -NoNewline; Write-Host $Message }
 
 # Script paths
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -36,7 +36,7 @@ Write-Host ""
 # Confirm uninstallation
 $Confirm = Read-Host "Are you sure you want to uninstall Action Packer? [y/N]"
 if ($Confirm -notmatch '^[Yy]') {
-    Write-Info "Uninstallation cancelled"
+    Write-InfoMessage "Uninstallation cancelled"
     exit 0
 }
 
@@ -48,20 +48,20 @@ $ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyConti
 if ($ExistingTask) {
     # Stop the task if running
     Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-    Write-Status "Task stopped"
+    Write-StatusMessage "Task stopped"
     
     # Remove the task
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-    Write-Status "Task removed"
+    Write-StatusMessage "Task removed"
 } else {
-    Write-Info "Scheduled task not found (may not be installed)"
+    Write-InfoMessage "Scheduled task not found (may not be installed)"
 }
 
 # Remove startup script
 $StartupScript = Join-Path $ProjectDir "scripts\startup.ps1"
 if (Test-Path $StartupScript) {
     Remove-Item $StartupScript -Force
-    Write-Status "Removed startup script"
+    Write-StatusMessage "Removed startup script"
 }
 
 # Ask about logs
@@ -75,9 +75,9 @@ if (Test-Path $LogDir) {
         if ((Test-Path $ParentDir) -and ((Get-ChildItem $ParentDir | Measure-Object).Count -eq 0)) {
             Remove-Item $ParentDir -Force
         }
-        Write-Status "Removed log directory"
+        Write-StatusMessage "Removed log directory"
     } else {
-        Write-Info "Log files preserved"
+        Write-InfoMessage "Log files preserved"
     }
 }
 
@@ -97,9 +97,9 @@ if ($RemoveNodeModules -match '^[Yy]') {
             Remove-Item $Path -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
-    Write-Status "Removed node_modules and build files"
+    Write-StatusMessage "Removed node_modules and build files"
 } else {
-    Write-Info "Files preserved"
+    Write-InfoMessage "Files preserved"
 }
 
 # Ask about data files
@@ -109,9 +109,9 @@ if (Test-Path $DataDir) {
     $RemoveData = Read-Host "Remove database and data files? [y/N]"
     if ($RemoveData -match '^[Yy]') {
         Remove-Item $DataDir -Recurse -Force
-        Write-Status "Removed data directory"
+        Write-StatusMessage "Removed data directory"
     } else {
-        Write-Info "Data files preserved"
+        Write-InfoMessage "Data files preserved"
     }
 }
 
@@ -122,9 +122,9 @@ if (Test-Path $EnvFile) {
     $RemoveEnv = Read-Host "Remove environment configuration (.env)? [y/N]"
     if ($RemoveEnv -match '^[Yy]') {
         Remove-Item $EnvFile -Force
-        Write-Status "Removed .env file"
+        Write-StatusMessage "Removed .env file"
     } else {
-        Write-Info "Environment file preserved"
+        Write-InfoMessage "Environment file preserved"
     }
 }
 
@@ -133,6 +133,6 @@ Write-Host "╔═════════════════════�
 Write-Host "║            Uninstallation Complete! 👋                     ║" -ForegroundColor Green
 Write-Host "╚═══════════════════════════════════════════════════════════╝" -ForegroundColor Green
 Write-Host ""
-Write-Info "Action Packer service has been removed."
-Write-Info "The project files remain in: $ProjectDir"
+Write-InfoMessage "Action Packer service has been removed."
+Write-InfoMessage "The project files remain in: $ProjectDir"
 Write-Host ""

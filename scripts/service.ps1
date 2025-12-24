@@ -26,10 +26,10 @@ param(
 $ErrorActionPreference = "Stop"
 
 # Colors and formatting
-function Write-Status { param($Message) Write-Host "✓ " -ForegroundColor Green -NoNewline; Write-Host $Message }
-function Write-Warning { param($Message) Write-Host "⚠ " -ForegroundColor Yellow -NoNewline; Write-Host $Message }
-function Write-Error { param($Message) Write-Host "✗ " -ForegroundColor Red -NoNewline; Write-Host $Message }
-function Write-Info { param($Message) Write-Host "ℹ " -ForegroundColor Cyan -NoNewline; Write-Host $Message }
+function Write-StatusMessage { param($Message) Write-Host "✓ " -ForegroundColor Green -NoNewline; Write-Host $Message }
+function Write-WarningMessage { param($Message) Write-Host "⚠ " -ForegroundColor Yellow -NoNewline; Write-Host $Message }
+function Write-ErrorMessage { param($Message) Write-Host "✗ " -ForegroundColor Red -NoNewline; Write-Host $Message }
+function Write-InfoMessage { param($Message) Write-Host "ℹ " -ForegroundColor Cyan -NoNewline; Write-Host $Message }
 
 # Script paths
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -40,7 +40,7 @@ $LogDir = Join-Path $env:LOCALAPPDATA "ActionPacker\Logs"
 function Test-TaskInstalled {
     $Task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     if (-not $Task) {
-        Write-Error "Service is not installed. Run install.ps1 first."
+        Write-ErrorMessage "Service is not installed. Run install.ps1 first."
         exit 1
     }
     return $Task
@@ -51,13 +51,13 @@ function Start-ActionPacker {
     Write-Host "Starting Action Packer..." -ForegroundColor Cyan
     
     if ($Task.State -eq "Running") {
-        Write-Info "Service is already running"
+        Write-InfoMessage "Service is already running"
         return
     }
     
     Start-ScheduledTask -TaskName $TaskName
     Start-Sleep -Seconds 2
-    Write-Status "Service started"
+    Write-StatusMessage "Service started"
 }
 
 function Stop-ActionPacker {
@@ -65,21 +65,21 @@ function Stop-ActionPacker {
     Write-Host "Stopping Action Packer..." -ForegroundColor Cyan
     
     if ($Task.State -ne "Running") {
-        Write-Info "Service is not running"
+        Write-InfoMessage "Service is not running"
         return
     }
     
     Stop-ScheduledTask -TaskName $TaskName
     
     # Also kill any node processes running from this directory
-    $NodeProcesses = Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object {
-        $_.Path -and $_.CommandLine -match [regex]::Escape($ProjectDir)
+    $NodeProcesses = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue | Where-Object {
+        $_.CommandLine -and ($_.CommandLine -match [regex]::Escape($ProjectDir))
     }
     if ($NodeProcesses) {
-        $NodeProcesses | Stop-Process -Force -ErrorAction SilentlyContinue
+        $NodeProcesses | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     }
     
-    Write-Status "Service stopped"
+    Write-StatusMessage "Service stopped"
 }
 
 function Restart-ActionPacker {
@@ -93,7 +93,7 @@ function Restart-ActionPacker {
     
     Start-ScheduledTask -TaskName $TaskName
     Start-Sleep -Seconds 2
-    Write-Status "Service restarted"
+    Write-StatusMessage "Service restarted"
 }
 
 function Show-Status {
@@ -133,9 +133,9 @@ function Show-Status {
     $Listening = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
     Write-Host ""
     if ($Listening) {
-        Write-Status "Server is listening on port $Port"
+        Write-StatusMessage "Server is listening on port $Port"
     } else {
-        Write-Warning "Server is not listening on port $Port"
+        Write-WarningMessage "Server is not listening on port $Port"
     }
 }
 
@@ -145,7 +145,7 @@ function Show-Logs {
     $StdOutLog = Join-Path $LogDir "stdout.log"
     
     if (-not (Test-Path $StdOutLog)) {
-        Write-Error "Log file not found: $StdOutLog"
+        Write-ErrorMessage "Log file not found: $StdOutLog"
         exit 1
     }
     

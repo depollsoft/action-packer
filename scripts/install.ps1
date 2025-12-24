@@ -25,10 +25,10 @@ param(
 $ErrorActionPreference = "Stop"
 
 # Colors and formatting
-function Write-Status { param($Message) Write-Host "✓ " -ForegroundColor Green -NoNewline; Write-Host $Message }
-function Write-Warning { param($Message) Write-Host "⚠ " -ForegroundColor Yellow -NoNewline; Write-Host $Message }
-function Write-Error { param($Message) Write-Host "✗ " -ForegroundColor Red -NoNewline; Write-Host $Message }
-function Write-Info { param($Message) Write-Host "ℹ " -ForegroundColor Cyan -NoNewline; Write-Host $Message }
+function Write-StatusMessage { param($Message) Write-Host "✓ " -ForegroundColor Green -NoNewline; Write-Host $Message }
+function Write-WarningMessage { param($Message) Write-Host "⚠ " -ForegroundColor Yellow -NoNewline; Write-Host $Message }
+function Write-ErrorMessage { param($Message) Write-Host "✗ " -ForegroundColor Red -NoNewline; Write-Host $Message }
+function Write-InfoMessage { param($Message) Write-Host "ℹ " -ForegroundColor Cyan -NoNewline; Write-Host $Message }
 
 # Script paths
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -53,37 +53,37 @@ Write-Host "Checking requirements..." -ForegroundColor Cyan
 # Check Node.js
 $NodePath = Get-Command node -ErrorAction SilentlyContinue
 if (-not $NodePath) {
-    Write-Error "Node.js is not installed. Please install Node.js 20+ first."
+    Write-ErrorMessage "Node.js is not installed. Please install Node.js 20+ first."
     Write-Host "  Visit: https://nodejs.org/"
     exit 1
 }
 
 $NodeVersion = (node -v) -replace 'v', '' -split '\.' | Select-Object -First 1
 if ([int]$NodeVersion -lt 20) {
-    Write-Error "Node.js 20+ is required. Current version: $(node -v)"
+    Write-ErrorMessage "Node.js 20+ is required. Current version: $(node -v)"
     exit 1
 }
-Write-Status "Node.js $(node -v) found"
+Write-StatusMessage "Node.js $(node -v) found"
 
 # Check npm
 $NpmPath = Get-Command npm -ErrorAction SilentlyContinue
 if (-not $NpmPath) {
-    Write-Error "npm is not installed."
+    Write-ErrorMessage "npm is not installed."
     exit 1
 }
-Write-Status "npm $(npm -v) found"
+Write-StatusMessage "npm $(npm -v) found"
 
 # Check Docker
 $DockerPath = Get-Command docker -ErrorAction SilentlyContinue
 if (-not $DockerPath) {
-    Write-Warning "Docker is not installed. Runner management will not work."
-    Write-Info "Install Docker Desktop: https://docs.docker.com/desktop/install/windows/"
+    Write-WarningMessage "Docker is not installed. Runner management will not work."
+    Write-InfoMessage "Install Docker Desktop: https://docs.docker.com/desktop/install/windows/"
 } else {
     try {
         docker info 2>&1 | Out-Null
-        Write-Status "Docker is installed and running"
+        Write-StatusMessage "Docker is installed and running"
     } catch {
-        Write-Warning "Docker is installed but not running or not accessible"
+        Write-WarningMessage "Docker is installed but not running or not accessible"
     }
 }
 
@@ -93,12 +93,12 @@ Write-Host "Installing dependencies..." -ForegroundColor Cyan
 Push-Location $ProjectDir
 try {
     npm install
-    Write-Status "npm dependencies installed"
+    Write-StatusMessage "npm dependencies installed"
     
     Write-Host ""
     Write-Host "Building for production..." -ForegroundColor Cyan
     npm run build
-    Write-Status "Production build complete"
+    Write-StatusMessage "Production build complete"
 } finally {
     Pop-Location
 }
@@ -109,8 +109,8 @@ Write-Host "Setting up environment..." -ForegroundColor Cyan
 
 $EnvFile = Join-Path $ProjectDir "backend\.env"
 if (Test-Path $EnvFile) {
-    Write-Info "Environment file already exists at $EnvFile"
-    Write-Info "Skipping environment setup. Edit manually if needed."
+    Write-InfoMessage "Environment file already exists at $EnvFile"
+    Write-InfoMessage "Skipping environment setup. Edit manually if needed."
 } else {
     $EnvContent = @"
 # Action Packer Configuration
@@ -134,15 +134,15 @@ NODE_ENV=$Environment
 # OAUTH_CALLBACK_URL=https://your-domain.com/api/github/callback
 "@
     Set-Content -Path $EnvFile -Value $EnvContent -Encoding UTF8
-    Write-Status "Environment template created at $EnvFile"
-    Write-Warning "Please edit $EnvFile to configure your GitHub App settings"
+    Write-StatusMessage "Environment template created at $EnvFile"
+    Write-WarningMessage "Please edit $EnvFile to configure your GitHub App settings"
 }
 
 # Create log directory
 if (-not (Test-Path $LogDir)) {
     New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 }
-Write-Status "Log directory created at $LogDir"
+Write-StatusMessage "Log directory created at $LogDir"
 
 # Create the startup script
 $StartupScript = Join-Path $ProjectDir "scripts\startup.ps1"
@@ -173,10 +173,10 @@ Set-Location `$ProjectDir
 `$env:PORT = "$Port"
 
 # Start the server
-Start-Process -FilePath "npm" -ArgumentList "run", "start" -WorkingDirectory `$ProjectDir -RedirectStandardOutput `$StdOutLog -RedirectStandardError `$StdErrLog -NoNewWindow -Wait
+Start-Process -FilePath "npm" -ArgumentList "run", "start" -WorkingDirectory `$ProjectDir -RedirectStandardOutput `$StdOutLog -RedirectStandardError `$StdErrLog -NoNewWindow
 "@
 Set-Content -Path $StartupScript -Value $StartupContent -Encoding UTF8
-Write-Status "Created startup script"
+Write-StatusMessage "Created startup script"
 
 # Remove existing task if present
 Write-Host ""
@@ -185,7 +185,7 @@ Write-Host "Installing Windows Task..." -ForegroundColor Cyan
 $ExistingTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if ($ExistingTask) {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-    Write-Info "Removed existing scheduled task"
+    Write-InfoMessage "Removed existing scheduled task"
 }
 
 # Create scheduled task
@@ -199,30 +199,30 @@ $Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interac
 
 Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Settings $Settings -Principal $Principal -Description "Action Packer - GitHub Actions Runner Manager" | Out-Null
 
-Write-Status "Created scheduled task '$TaskName'"
+Write-StatusMessage "Created scheduled task '$TaskName'"
 
 # Start the task now
 Start-ScheduledTask -TaskName $TaskName
-Write-Status "Service started"
+Write-StatusMessage "Service started"
 
 Write-Host ""
 Write-Host "╔═══════════════════════════════════════════════════════════╗" -ForegroundColor Green
 Write-Host "║              Installation Complete! 🎉                     ║" -ForegroundColor Green
 Write-Host "╚═══════════════════════════════════════════════════════════╝" -ForegroundColor Green
 Write-Host ""
-Write-Info "Action Packer is now running at http://localhost:$Port"
-Write-Info "The service will automatically start when you log in."
+Write-InfoMessage "Action Packer is now running at http://localhost:$Port"
+Write-InfoMessage "The service will automatically start when you log in."
 Write-Host ""
-Write-Info "Logs are available at:"
-Write-Info "  stdout: $LogDir\stdout.log"
-Write-Info "  stderr: $LogDir\stderr.log"
+Write-InfoMessage "Logs are available at:"
+Write-InfoMessage "  stdout: $LogDir\stdout.log"
+Write-InfoMessage "  stderr: $LogDir\stderr.log"
 Write-Host ""
-Write-Warning "Next steps:"
+Write-WarningMessage "Next steps:"
 Write-Host "  1. Configure your GitHub App settings in backend\.env"
 Write-Host "  2. Ensure Docker Desktop is running for runner management"
 Write-Host "  3. Visit http://localhost:$Port to complete setup"
 Write-Host ""
-Write-Info "Useful commands:"
+Write-InfoMessage "Useful commands:"
 Write-Host "  .\scripts\service.ps1 status   - Check service status"
 Write-Host "  .\scripts\service.ps1 stop     - Stop the service"
 Write-Host "  .\scripts\service.ps1 start    - Start the service"

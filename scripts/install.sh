@@ -188,7 +188,7 @@ install_macos_service() {
     <key>KeepAlive</key>
     <dict>
         <key>SuccessfulExit</key>
-        <false/>
+        <true/>
         <key>Crashed</key>
         <true/>
     </dict>
@@ -271,8 +271,8 @@ Environment=PATH=/usr/local/bin:/usr/bin:/bin:$(dirname $(which node))
 # Hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=${PROJECT_DIR}/backend/data
+ProtectHome=false
+ReadWritePaths=${PROJECT_DIR}/backend/data /var/run/docker.sock
 PrivateTmp=true
 
 # Logging
