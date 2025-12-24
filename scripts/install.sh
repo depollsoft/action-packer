@@ -158,7 +158,8 @@ install_macos_service() {
     PLIST_PATH="$HOME/Library/LaunchAgents/${PLIST_NAME}.plist"
     LOG_DIR="$HOME/Library/Logs/ActionPacker"
     
-    # Create log directory
+    # Create required directories
+    mkdir -p "$HOME/Library/LaunchAgents"
     mkdir -p "$LOG_DIR"
     
     # Generate the plist file
