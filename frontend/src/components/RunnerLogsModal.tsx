@@ -96,8 +96,9 @@ export function RunnerLogsModal({ runner, onClose }: RunnerLogsModalProps) {
           }
           return newLogs;
         });
-      } catch {
-        // Ignore parse errors
+      } catch (error) {
+        // Ignore parse errors in the UI, but log for debugging
+        console.debug('Failed to parse runner log SSE message:', error);
       }
     };
 
