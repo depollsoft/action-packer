@@ -24,23 +24,27 @@ const getIdlePoolRunner = db.prepare(`
 const getCredentialById = db.prepare('SELECT * FROM credentials WHERE id = ?');
 
 /**
- * Check if a pool's labels match the job's requested labels.
- * Standard labels (self-hosted, os, arch) are ignored; only custom labels must match.
+ * Check if a pool's runners would be eligible to run a job based on labels.
+ * 
+ * Per GitHub's documentation: "a self-hosted runner must have ALL [requested] labels 
+ * to be eligible to process the job" - labels operate cumulatively.
+ * 
+ * This means: ALL job labels must be present in the pool's labels.
+ * The pool's label set must be a superset of (or equal to) the job's requested labels.
+ * 
+ * Examples:
+ * - Pool: ["self-hosted", "linux", "docker"], Job: ["self-hosted", "linux"] → MATCH
+ * - Pool: ["self-hosted", "linux", "docker"], Job: ["self-hosted", "docker"] → MATCH  
+ * - Pool: ["self-hosted", "linux"], Job: ["self-hosted", "linux", "docker"] → NO MATCH (pool lacks "docker")
+ * - Pool: ["self-hosted", "linux", "gpu"], Job: ["self-hosted", "linux", "docker"] → NO MATCH (pool lacks "docker")
  */
 export function labelsMatch(poolLabels: string[], jobLabels: string[]): boolean {
+  // If job requests no labels, any pool matches
   if (jobLabels.length === 0) return true;
 
-  // Standard labels that GitHub adds automatically (case-insensitive)
-  const standardLabels = ['self-hosted', 'linux', 'macos', 'windows', 'x64', 'arm64'];
-  const isStandardLabel = (l: string) => standardLabels.includes(l.toLowerCase());
-
-  const customJobLabels = jobLabels.filter(l => !isStandardLabel(l));
-
-  if (customJobLabels.length === 0) return true;
-
-  // Custom labels must match (case-insensitive)
+  // All job labels must be present in pool labels (case-insensitive)
   const poolLabelsLower = poolLabels.map(l => l.toLowerCase());
-  return customJobLabels.every(jobLabel => poolLabelsLower.includes(jobLabel.toLowerCase()));
+  return jobLabels.every(jobLabel => poolLabelsLower.includes(jobLabel.toLowerCase()));
 }
 
 /**
