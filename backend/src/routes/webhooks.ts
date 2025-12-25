@@ -162,14 +162,19 @@ webhooksRouter.post('/github', async (req: Request, res: Response) => {
         
         // Find matching pools and scale up
         let matchedPools = 0;
+        console.log(`[webhook] Checking ${pools.length} pool(s) for matches...`);
         for (const pool of pools) {
-          const effectiveLabels = getPoolEffectiveLabels(pool);
-          const matches = labelsMatch(effectiveLabels, jobLabels);
-          console.log(`[webhook] Pool ${pool.name} labels=[${effectiveLabels.join(',')}] matches=${matches}`);
-          
-          if (matches) {
-            matchedPools++;
-            await scaleUp(pool);
+          try {
+            const effectiveLabels = getPoolEffectiveLabels(pool);
+            const matches = labelsMatch(effectiveLabels, jobLabels);
+            console.log(`[webhook] Pool ${pool.name} (platform=${pool.platform}, arch=${pool.architecture}) labels=[${effectiveLabels.join(',')}] matches=${matches}`);
+            
+            if (matches) {
+              matchedPools++;
+              await scaleUp(pool);
+            }
+          } catch (err) {
+            console.error(`[webhook] Error checking pool ${pool.name}:`, err);
           }
         }
         if (matchedPools === 0) {
