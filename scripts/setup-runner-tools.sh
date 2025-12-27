@@ -551,7 +551,14 @@ install_languages() {
             fi
         fi
     done
-    pyenv global 3.14.2 2>/dev/null || pyenv global system
+    
+    # Set the latest installed Python 3.11-3.14 as the global default, or fall back to system
+    LATEST_PYTHON=$(pyenv versions --bare | grep -E '^(3\.11|3\.12|3\.13|3\.14)\.' | sort -V | tail -1)
+    if [ -n "$LATEST_PYTHON" ]; then
+        pyenv global "$LATEST_PYTHON" 2>/dev/null || pyenv global system
+    else
+        pyenv global system
+    fi
     print_success "Python setup complete"
     
     # Go (versions: 1.23, 1.24, 1.25)
@@ -593,15 +600,30 @@ install_languages() {
         print_success "rbenv is already installed"
     fi
     
-    for version in 3.2.9 3.3.10 3.4.7; do
-        if rbenv versions | grep -q "$version"; then
-            print_success "Ruby $version is already installed"
+    # Install Ruby versions (latest patch for each minor version)
+    for minor_version in 3.2 3.3 3.4; do
+        latest=$(rbenv install -l 2>/dev/null | grep -E "^\s*${minor_version}\.[0-9]+$" | tail -1 | tr -d ' ')
+        if [ -z "$latest" ]; then
+            # Fallback: try without the list filtering
+            latest=$(rbenv install --list-all 2>/dev/null | grep -E "^\s*${minor_version}\.[0-9]+$" | tail -1 | tr -d ' ')
+        fi
+        if [ -n "$latest" ]; then
+            if rbenv versions | grep -q "$latest"; then
+                print_success "Ruby $latest is already installed"
+            else
+                print_info "Installing Ruby $latest..."
+                rbenv install "$latest" || print_warning "Failed to install Ruby $latest"
+            fi
         else
-            print_info "Installing Ruby $version..."
-            rbenv install "$version" || print_warning "Failed to install Ruby $version"
+            print_warning "Could not find latest Ruby $minor_version version"
         fi
     done
-    rbenv global 3.4.7
+    
+    # Set the latest installed Ruby 3.x as the global default
+    LATEST_RUBY=$(rbenv versions --bare | grep -E '^3\.' | sort -V | tail -1)
+    if [ -n "$LATEST_RUBY" ]; then
+        rbenv global "$LATEST_RUBY"
+    fi
     print_success "Ruby setup complete"
     
     # Rust via rustup
@@ -924,8 +946,23 @@ main() {
     fi
     
     print_header "Installation Complete!"
+    
+    # Suggest reloading the appropriate shell configuration file
+    user_shell="$(basename "${SHELL:-}")"
+    case "$user_shell" in
+        zsh)
+            reload_cmd="source ~/.zshrc"
+            ;;
+        bash)
+            reload_cmd="source ~/.bashrc"
+            ;;
+        *)
+            reload_cmd="source your shell's startup file (e.g., ~/.profile, ~/.bashrc, ~/.zshrc)"
+            ;;
+    esac
+    
     echo "You may need to restart your terminal or run:"
-    echo "  source ~/.zshrc"
+    echo "  $reload_cmd"
     echo ""
     echo "To verify installations:"
     echo "  node --version"

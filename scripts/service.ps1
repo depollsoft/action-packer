@@ -173,11 +173,15 @@ function Update-ActionPacker {
     Push-Location $ProjectDir
     try {
         npm install
-        if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
+        if ($LASTEXITCODE -ne 0) { 
+            throw "npm install failed. The service may be in a partially updated state. To recover, manually run 'npm install' and 'npm run build' in $ProjectDir, then use './scripts/service.ps1 start' to restart the service."
+        }
         
         Write-Host "Building..." -ForegroundColor Cyan
         npm run build
-        if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
+        if ($LASTEXITCODE -ne 0) { 
+            throw "npm run build failed. The service may be in a partially updated state. Dependencies were installed successfully. To recover, manually run 'npm run build' in $ProjectDir, then use './scripts/service.ps1 start' to restart the service."
+        }
     }
     finally {
         Pop-Location
