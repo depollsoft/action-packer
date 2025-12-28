@@ -227,6 +227,10 @@ After changing configuration, restart the service:
 .\scripts\service.ps1 restart
 ```
 
+## Documentation
+
+- [macOS Runner Isolation Options](docs/macos-runner-isolation-options.md) - Research on isolation technologies for running multiple concurrent runners on macOS
+
 ## Contributing
 
 This is an experimental personal project, but contributions are welcome!
