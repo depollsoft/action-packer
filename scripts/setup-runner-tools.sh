@@ -37,6 +37,34 @@ print_info() {
     echo -e "${BLUE}ℹ${NC} $1"
 }
 
+# Get the user's shell RC file based on their actual shell
+get_shell_rc() {
+    local shell_name
+    shell_name="$(basename "${SHELL:-}")"
+    case "$shell_name" in
+        zsh)
+            echo "$HOME/.zshrc"
+            ;;
+        bash)
+            echo "$HOME/.bashrc"
+            ;;
+        *)
+            # Fall back to .profile for unknown shells
+            echo "$HOME/.profile"
+            ;;
+    esac
+}
+
+# Add a line to the user's shell RC file if not already present
+add_to_shell_rc() {
+    local line="$1"
+    local shell_rc
+    shell_rc=$(get_shell_rc)
+    if ! grep -qF "$line" "$shell_rc" 2>/dev/null; then
+        echo "$line" >> "$shell_rc"
+    fi
+}
+
 # Detect OS
 OS="$(uname -s)"
 ARCH="$(uname -m)"
@@ -528,9 +556,9 @@ install_languages() {
         fi
         
         # Add pyenv to shell
-        echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.zshrc
-        echo 'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.zshrc
-        echo 'eval "$(pyenv init -)"' >> ~/.zshrc
+        add_to_shell_rc 'export PYENV_ROOT="$HOME/.pyenv"'
+        add_to_shell_rc 'command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"'
+        add_to_shell_rc 'eval "$(pyenv init -)"'
         
         export PYENV_ROOT="$HOME/.pyenv"
         export PATH="$PYENV_ROOT/bin:$PATH"
@@ -577,7 +605,7 @@ install_languages() {
             sudo rm -rf /usr/local/go
             sudo tar -C /usr/local -xzf /tmp/go.tar.gz
             rm /tmp/go.tar.gz
-            echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.zshrc
+            add_to_shell_rc 'export PATH=$PATH:/usr/local/go/bin'
             export PATH=$PATH:/usr/local/go/bin
         fi
         print_success "Go setup complete"
@@ -591,8 +619,8 @@ install_languages() {
         else
             git clone https://github.com/rbenv/rbenv.git ~/.rbenv
             git clone https://github.com/rbenv/ruby-build.git ~/.rbenv/plugins/ruby-build
-            echo 'export PATH="$HOME/.rbenv/bin:$PATH"' >> ~/.zshrc
-            echo 'eval "$(rbenv init -)"' >> ~/.zshrc
+            add_to_shell_rc 'export PATH="$HOME/.rbenv/bin:$PATH"'
+            add_to_shell_rc 'eval "$(rbenv init -)"'
             export PATH="$HOME/.rbenv/bin:$PATH"
             eval "$(rbenv init -)"
         fi
@@ -669,8 +697,8 @@ install_languages() {
             chmod +x /tmp/dotnet-install.sh
             /tmp/dotnet-install.sh --channel 8.0
             /tmp/dotnet-install.sh --channel 9.0
-            echo 'export DOTNET_ROOT=$HOME/.dotnet' >> ~/.zshrc
-            echo 'export PATH=$PATH:$DOTNET_ROOT:$DOTNET_ROOT/tools' >> ~/.zshrc
+            add_to_shell_rc 'export DOTNET_ROOT=$HOME/.dotnet'
+            add_to_shell_rc 'export PATH=$PATH:$DOTNET_ROOT:$DOTNET_ROOT/tools'
         fi
     else
         print_success ".NET is already installed"
@@ -857,17 +885,14 @@ install_android() {
     fi
     
     # Add environment variables to shell config
-    if [ "$OS" = "Darwin" ]; then
-        SHELL_RC="$HOME/.zshrc"
-    else
-        SHELL_RC="$HOME/.bashrc"
-    fi
+    local shell_rc
+    shell_rc=$(get_shell_rc)
     
-    if ! grep -q "ANDROID_HOME" "$SHELL_RC" 2>/dev/null; then
-        echo "" >> "$SHELL_RC"
-        echo "# Android SDK" >> "$SHELL_RC"
-        echo "export ANDROID_HOME=\"$ANDROID_HOME\"" >> "$SHELL_RC"
-        echo "export PATH=\"\$ANDROID_HOME/cmdline-tools/latest/bin:\$ANDROID_HOME/platform-tools:\$PATH\"" >> "$SHELL_RC"
+    if ! grep -q "ANDROID_HOME" "$shell_rc" 2>/dev/null; then
+        echo "" >> "$shell_rc"
+        echo "# Android SDK" >> "$shell_rc"
+        echo "export ANDROID_HOME=\"$ANDROID_HOME\"" >> "$shell_rc"
+        echo "export PATH=\"\$ANDROID_HOME/cmdline-tools/latest/bin:\$ANDROID_HOME/platform-tools:\$PATH\"" >> "$shell_rc"
     fi
     
     print_success "Android SDK installation complete"
