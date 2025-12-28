@@ -23,6 +23,104 @@ const RUNNERS_DIR = process.env.RUNNERS_DIR || path.join(os.homedir(), '.action-
 // Track running processes
 const runningProcesses = new Map<string, ChildProcess>();
 
+// Track orphaned processes (ones we found running after restart but can't control)
+const orphanedProcessIds = new Map<string, number>();
+
+/**
+ * Check if a process with the given PID is still running
+ */
+export function isProcessAlive(pid: number): boolean {
+  try {
+    // Sending signal 0 doesn't kill the process, just checks if it exists
+    process.kill(pid, 0);
+    return true;
+  } catch (err: unknown) {
+    // ESRCH = no such process, EPERM = exists but no permission (still alive)
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EPERM') {
+      return true;
+    }
+    return false;
+  }
+}
+
+/**
+ * Try to kill a process by PID
+ */
+export function killProcess(pid: number, signal: NodeJS.Signals = 'SIGTERM'): boolean {
+  try {
+    process.kill(pid, signal);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Mark a runner as having an orphaned process (running from before restart)
+ * We can't control these processes directly, but we can track them and kill them
+ */
+export function trackOrphanedRunner(runnerId: string, pid: number): void {
+  orphanedProcessIds.set(runnerId, pid);
+}
+
+/**
+ * Check if a runner has an orphaned process or a tracked process running
+ */
+export function isRunnerProcessAlive(runnerId: string, storedPid?: number | null): boolean {
+  // First check our in-memory tracked processes
+  if (runningProcesses.has(runnerId)) {
+    return true;
+  }
+  
+  // Check orphaned processes
+  const orphanedPid = orphanedProcessIds.get(runnerId);
+  if (orphanedPid && isProcessAlive(orphanedPid)) {
+    return true;
+  }
+  
+  // Check the stored PID from database
+  if (storedPid && isProcessAlive(storedPid)) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Stop an orphaned runner process
+ */
+export async function stopOrphanedRunner(runnerId: string, storedPid?: number | null): Promise<boolean> {
+  const pid = orphanedProcessIds.get(runnerId) || storedPid;
+  
+  if (!pid) {
+    return false;
+  }
+  
+  if (!isProcessAlive(pid)) {
+    orphanedProcessIds.delete(runnerId);
+    return false;
+  }
+  
+  console.log(`Stopping orphaned runner process ${runnerId} (PID: ${pid})...`);
+  
+  // Try graceful shutdown first
+  killProcess(pid, 'SIGTERM');
+  
+  // Wait a bit for graceful shutdown
+  await new Promise(resolve => setTimeout(resolve, 3000));
+  
+  // Force kill if still running
+  if (isProcessAlive(pid)) {
+    console.log(`Force killing orphaned process ${pid}...`);
+    killProcess(pid, 'SIGKILL');
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  
+  orphanedProcessIds.delete(runnerId);
+  return true;
+}
+
 // Platform detection
 export function detectPlatform(): { platform: NodeJS.Platform; arch: string } {
   return {
@@ -352,6 +450,7 @@ export async function startRunner(runnerId: string, runnerDir: string): Promise<
  * Stop a running runner
  */
 export async function stopRunner(runnerId: string): Promise<void> {
+  const runner = getRunnerById.get(runnerId) as RunnerRow | undefined;
   const proc = runningProcesses.get(runnerId);
   
   if (proc) {
@@ -372,9 +471,24 @@ export async function stopRunner(runnerId: string): Promise<void> {
         resolve();
       });
     });
+    
+    runningProcesses.delete(runnerId);
+  } else {
+    // Check for orphaned process
+    const stopped = await stopOrphanedRunner(runnerId, runner?.process_id);
+    if (!stopped && runner?.process_id && isProcessAlive(runner.process_id)) {
+      // Last resort: try to kill by stored PID
+      console.log(`Stopping runner ${runnerId} by stored PID: ${runner.process_id}`);
+      killProcess(runner.process_id, 'SIGTERM');
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      if (isProcessAlive(runner.process_id)) {
+        killProcess(runner.process_id, 'SIGKILL');
+      }
+    }
   }
   
-  runningProcesses.delete(runnerId);
+  // Clear process ID in database
+  updateRunnerProcessId.run(null, runnerId);
   updateRunnerStatus.run('offline', runnerId);
 }
 

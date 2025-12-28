@@ -19,7 +19,7 @@
 
 param(
     [Parameter(Position=0)]
-    [ValidateSet("start", "stop", "restart", "status", "logs", "help")]
+    [ValidateSet("start", "stop", "restart", "update", "status", "logs", "help")]
     [string]$Command = "help"
 )
 
@@ -153,6 +153,48 @@ function Show-Logs {
     Get-Content $StdOutLog -Wait -Tail 50
 }
 
+function Update-ActionPacker {
+    Test-TaskInstalled | Out-Null
+    
+    Write-Host "Updating Action Packer..." -ForegroundColor Cyan
+    Write-Host "Project directory: $ProjectDir"
+    Write-Host ""
+    
+    # Stop the service if running
+    $Task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($Task -and $Task.State -eq "Running") {
+        Write-Host "Stopping service..." -ForegroundColor Cyan
+        Stop-ScheduledTask -TaskName $TaskName
+        Start-Sleep -Seconds 1
+    }
+    
+    # Install dependencies and rebuild
+    Write-Host "Installing dependencies..." -ForegroundColor Cyan
+    Push-Location $ProjectDir
+    try {
+        npm install
+        if ($LASTEXITCODE -ne 0) { 
+            throw "npm install failed. The service may be in a partially updated state. To recover, manually run 'npm install' and 'npm run build' in $ProjectDir, then use './scripts/service.ps1 start' to restart the service."
+        }
+        
+        Write-Host "Building..." -ForegroundColor Cyan
+        npm run build
+        if ($LASTEXITCODE -ne 0) { 
+            throw "npm run build failed. The service may be in a partially updated state. Dependencies were installed successfully. To recover, manually run 'npm run build' in $ProjectDir, then use './scripts/service.ps1 start' to restart the service."
+        }
+    }
+    finally {
+        Pop-Location
+    }
+    
+    # Start the service
+    Write-Host "Starting service..." -ForegroundColor Cyan
+    Start-ScheduledTask -TaskName $TaskName
+    Start-Sleep -Seconds 2
+    
+    Write-StatusMessage "Update complete! Service is running."
+}
+
 function Show-Help {
     Write-Host "Action Packer Service Control" -ForegroundColor Cyan
     Write-Host ""
@@ -162,6 +204,7 @@ function Show-Help {
     Write-Host "  start     Start the service"
     Write-Host "  stop      Stop the service"
     Write-Host "  restart   Restart the service"
+    Write-Host "  update    Rebuild and restart (run after git pull)"
     Write-Host "  status    Show service status"
     Write-Host "  logs      Follow log output"
     Write-Host "  help      Show this help message"
@@ -173,6 +216,7 @@ switch ($Command) {
     "start"   { Start-ActionPacker }
     "stop"    { Stop-ActionPacker }
     "restart" { Restart-ActionPacker }
+    "update"  { Update-ActionPacker }
     "status"  { Show-Status }
     "logs"    { Show-Logs }
     "help"    { Show-Help }

@@ -10,7 +10,7 @@ import { decrypt, verifyHmacSignature } from '../utils/index.js';
 import {
   removeDockerRunner,
 } from '../services/index.js';
-import { ensureWarmRunners, labelsMatch, scaleUp, scaleDown as autoscaleDown } from '../services/autoscaler.js';
+import { ensureWarmRunners, getPoolEffectiveLabels, labelsMatch, scaleUp, scaleDown as autoscaleDown } from '../services/autoscaler.js';
 
 export const webhooksRouter = Router();
 
@@ -162,14 +162,19 @@ webhooksRouter.post('/github', async (req: Request, res: Response) => {
         
         // Find matching pools and scale up
         let matchedPools = 0;
+        console.log(`[webhook] Checking ${pools.length} pool(s) for matches...`);
         for (const pool of pools) {
-          const poolLabels = JSON.parse(pool.labels) as string[];
-          const matches = labelsMatch(poolLabels, jobLabels);
-          console.log(`[webhook] Pool ${pool.name} labels=[${poolLabels.join(',')}] matches=${matches}`);
-          
-          if (matches) {
-            matchedPools++;
-            await scaleUp(pool);
+          try {
+            const effectiveLabels = getPoolEffectiveLabels(pool);
+            const matches = labelsMatch(effectiveLabels, jobLabels);
+            console.log(`[webhook] Pool ${pool.name} (platform=${pool.platform}, arch=${pool.architecture}, isolation=${pool.isolation_type}) labels=[${effectiveLabels.join(',')}] matches=${matches}`);
+            
+            if (matches) {
+              matchedPools++;
+              await scaleUp(pool);
+            }
+          } catch (err) {
+            console.error(`[webhook] Error checking pool ${pool.name}:`, err);
           }
         }
         if (matchedPools === 0) {

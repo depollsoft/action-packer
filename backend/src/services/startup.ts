@@ -5,7 +5,13 @@
 
 import { db, type RunnerRow, type RunnerPoolRow } from '../db/index.js';
 import { ensureWarmRunners } from './autoscaler.js';
-import { startRunner, isRunnerRunning, syncRunnerStatus } from './runnerManager.js';
+import { 
+  startRunner, 
+  isRunnerRunning, 
+  syncRunnerStatus,
+  isRunnerProcessAlive,
+  trackOrphanedRunner
+} from './runnerManager.js';
 import { startDockerRunner, syncDockerRunnerStatus, isDockerAvailable } from './dockerRunner.js';
 
 // Prepared statements
@@ -85,10 +91,25 @@ async function restartStaticRunners(dockerAvailable: boolean): Promise<void> {
         }
       } else {
         // For native runners, check if process is still running
+        // First check our in-memory map (will be empty after restart)
         if (isRunnerRunning(runner.id)) {
-          console.log(`✓ Native runner ${runner.name} is already running`);
+          console.log(`✓ Native runner ${runner.name} is already tracked`);
           await syncRunnerStatus(runner.id);
+        } else if (isRunnerProcessAlive(runner.id, runner.process_id)) {
+          // Process is still running from before restart - track as orphaned
+          console.log(`🔗 Native runner ${runner.name} found still running (PID: ${runner.process_id}), reattaching...`);
+          if (runner.process_id) {
+            trackOrphanedRunner(runner.id, runner.process_id);
+          }
+          // Sync status with GitHub to see if it's actually working
+          await syncRunnerStatus(runner.id);
+          console.log(`✓ Reattached to runner ${runner.name}`);
         } else if (runner.runner_dir) {
+          // Process is not running - clear stale PID and restart
+          if (runner.process_id) {
+            console.log(`ℹ️  Clearing stale PID ${runner.process_id} for runner ${runner.name}`);
+            db.prepare('UPDATE runners SET process_id = NULL WHERE id = ?').run(runner.id);
+          }
           console.log(`🔄 Restarting native runner ${runner.name}...`);
           updateRunnerStatus.run('pending', runner.id);
           await startRunner(runner.id, runner.runner_dir);

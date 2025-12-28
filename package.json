@@ -16,9 +16,10 @@
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
-    "install:service": "node -e \"const { spawnSync } = require('child_process'); const isWin = process.platform === 'win32'; const shell = isWin ? 'powershell' : 'sh'; const script = isWin ? './scripts/install.ps1' : './scripts/install.sh'; const result = spawnSync(shell, [script], { stdio: 'inherit' }); process.exit(result.status ?? 0);\"",
-    "uninstall:service": "node -e \"const { spawnSync } = require('child_process'); const isWin = process.platform === 'win32'; const shell = isWin ? 'powershell' : 'sh'; const script = isWin ? './scripts/uninstall.ps1' : './scripts/uninstall.sh'; const result = spawnSync(shell, [script], { stdio: 'inherit' }); process.exit(result.status ?? 0);\"",
-    "service": "node -e \"const { spawnSync } = require('child_process'); const isWin = process.platform === 'win32'; const shell = isWin ? 'powershell' : 'sh'; const script = isWin ? './scripts/service.ps1' : './scripts/service.sh'; const args = process.argv.slice(2); const result = spawnSync(shell, [script, ...args], { stdio: 'inherit' }); process.exit(result.status ?? 0);\""
+    "install:service": "node --input-type=commonjs -e \"const{spawnSync}=require('child_process');const isWin=process.platform==='win32';const r=spawnSync(isWin?'powershell':'sh',[isWin?'./scripts/install.ps1':'./scripts/install.sh'],{stdio:'inherit'});process.exit(r.status??0)\"",
+    "uninstall:service": "node --input-type=commonjs -e \"const{spawnSync}=require('child_process');const isWin=process.platform==='win32';const r=spawnSync(isWin?'powershell':'sh',[isWin?'./scripts/uninstall.ps1':'./scripts/uninstall.sh'],{stdio:'inherit'});process.exit(r.status??0)\"",
+    "service": "node --input-type=commonjs -e \"const{spawnSync}=require('child_process');const isWin=process.platform==='win32';const s=isWin?'./scripts/service.ps1':'./scripts/service.sh';const r=spawnSync(isWin?'powershell':'sh',[s,...process.argv.slice(1)],{stdio:'inherit'});process.exit(r.status??0)\"",
+    "setup:runner-tools": "node --input-type=commonjs -e \"const{spawnSync}=require('child_process');const isWin=process.platform==='win32';const s=isWin?'./scripts/setup-runner-tools.ps1':'./scripts/setup-runner-tools.sh';const r=spawnSync(isWin?'powershell':'sh',[s,...process.argv.slice(1)],{stdio:'inherit'});process.exit(r.status??0)\""
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

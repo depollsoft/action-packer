@@ -163,6 +163,70 @@ show_logs() {
     esac
 }
 
+# Update and rebuild
+update_service() {
+    check_installed
+    
+    # Find the project directory from the plist or service file
+    case "$OS_TYPE" in
+        macos)
+            PROJECT_DIR=$(defaults read "$MACOS_PLIST_PATH" WorkingDirectory 2>/dev/null || echo "")
+            ;;
+        linux)
+            PROJECT_DIR=$(grep "WorkingDirectory=" "/etc/systemd/system/${LINUX_SERVICE_NAME}.service" 2>/dev/null | cut -d'=' -f2)
+            ;;
+    esac
+    
+    if [ -z "$PROJECT_DIR" ] || [ ! -d "$PROJECT_DIR" ]; then
+        # Fallback: try to find it relative to this script
+        SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+    fi
+    
+    if [ ! -f "$PROJECT_DIR/package.json" ]; then
+        print_error "Could not find project directory"
+        exit 1
+    fi
+    
+    echo -e "${BLUE}Updating Action Packer...${NC}"
+    echo "Project directory: $PROJECT_DIR"
+    echo ""
+    
+    # Stop the service
+    echo -e "${BLUE}Stopping service...${NC}"
+    case "$OS_TYPE" in
+        macos)
+            launchctl stop "$MACOS_PLIST_NAME" 2>/dev/null || true
+            ;;
+        linux)
+            sudo systemctl stop "$LINUX_SERVICE_NAME" 2>/dev/null || true
+            ;;
+    esac
+    sleep 1
+    
+    # Install dependencies and rebuild
+    echo -e "${BLUE}Installing dependencies...${NC}"
+    cd "$PROJECT_DIR"
+    npm install
+    
+    echo -e "${BLUE}Building...${NC}"
+    npm run build
+    
+    # Start the service
+    echo -e "${BLUE}Starting service...${NC}"
+    case "$OS_TYPE" in
+        macos)
+            launchctl start "$MACOS_PLIST_NAME"
+            ;;
+        linux)
+            sudo systemctl start "$LINUX_SERVICE_NAME"
+            ;;
+    esac
+    
+    sleep 2
+    print_status "Update complete! Service is running."
+}
+
 # Show help
 show_help() {
     echo "Action Packer Service Control"
@@ -173,6 +237,7 @@ show_help() {
     echo "  start     Start the service"
     echo "  stop      Stop the service"
     echo "  restart   Restart the service"
+    echo "  update    Rebuild and restart (run after git pull)"
     echo "  status    Show service status"
     echo "  logs      Follow log output"
     echo "  help      Show this help message"
@@ -184,6 +249,7 @@ case "${1:-help}" in
     start)   start_service ;;
     stop)    stop_service ;;
     restart) restart_service ;;
+    update)  update_service ;;
     status)  show_status ;;
     logs)    show_logs ;;
     help)    show_help ;;

@@ -47,6 +47,10 @@ export {
   removeRunner,
   getRunnerProcess,
   isRunnerRunning,
+  isRunnerProcessAlive,
+  isProcessAlive,
+  trackOrphanedRunner,
+  stopOrphanedRunner,
   syncRunnerStatus,
   createAndStartRunner,
 } from './runnerManager.js';
