@@ -28,15 +28,25 @@ let isReconciling = false;
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
- * Helper to add timeout to a promise
+ * Helper to add timeout to a promise (properly cleans up timer to avoid leaks)
  */
 function withTimeout<T>(promise: Promise<T>, ms: number, operation: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => 
-      setTimeout(() => reject(new Error(`${operation} timed out after ${ms}ms`)), ms)
-    )
-  ]);
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`${operation} timed out after ${ms}ms`));
+    }, ms);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timeoutId);
+        reject(err);
+      }
+    );
+  });
 }
 
 // Prepared statements
@@ -95,16 +105,13 @@ export async function reconcileRunners(): Promise<void> {
   isReconciling = true;
   console.log('[reconciler] Starting reconciliation...');
 
-  // Wrap entire reconciliation in a timeout to prevent hanging
-  const timeoutPromise = new Promise<void>((_, reject) => {
-    setTimeout(() => reject(new Error('Reconciliation timed out')), RECONCILE_TIMEOUT_MS);
-  });
-
+  // Use withTimeout to properly clean up timers
   try {
-    await Promise.race([
+    await withTimeout(
       reconcileRunnersInternal(),
-      timeoutPromise
-    ]);
+      RECONCILE_TIMEOUT_MS,
+      'Reconciliation'
+    );
   } catch (error) {
     console.error('[reconciler] Reconciliation failed:', error);
   } finally {
