@@ -45,6 +45,7 @@ export {
   startRunner,
   stopRunner,
   removeRunner,
+  cleanupRunnerFiles,
   getRunnerProcess,
   isRunnerRunning,
   isRunnerProcessAlive,

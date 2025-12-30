@@ -10,7 +10,7 @@
 
 import { db, type RunnerRow, type RunnerPoolRow } from '../db/index.js';
 import { createClientFromCredentialId } from './credentialResolver.js';
-import { removeRunner, isRunnerProcessAlive, stopOrphanedRunner } from './runnerManager.js';
+import { cleanupRunnerFiles, isRunnerProcessAlive, stopOrphanedRunner } from './runnerManager.js';
 import { removeDockerRunner, getContainerStatus } from './dockerRunner.js';
 import { ensureWarmRunners } from './autoscaler.js';
 
@@ -206,20 +206,29 @@ export async function reconcileRunners(): Promise<void> {
 
 /**
  * Clean up an orphaned runner (exists locally but not in GitHub)
+ * Uses direct file cleanup instead of removeRunner() to avoid unnecessary
+ * GitHub API calls and deregistration scripts for runners that are already gone.
  */
 async function cleanupOrphanedRunner(runner: RunnerRow): Promise<void> {
   try {
+    // Check if runner still exists in database (may have been cleaned up concurrently)
+    const currentRunner = db.prepare('SELECT id FROM runners WHERE id = ?').get(runner.id);
+    if (!currentRunner) {
+      console.log(`[reconciler] Runner ${runner.name} already cleaned up by another process`);
+      return;
+    }
+
     // Stop any running process/container
     if (runner.isolation_type === 'docker') {
       await removeDockerRunner(runner.id).catch(() => {});
     } else {
-      // Try to stop any orphaned native process
+      // Stop any orphaned native process
       await stopOrphanedRunner(runner.id, runner.process_id).catch(() => {});
-      // Clean up files
-      await removeRunner(runner.id).catch(() => {});
+      // Clean up files directly (no GitHub API calls needed for orphaned runners)
+      await cleanupRunnerFiles(runner.runner_dir);
     }
 
-    // Delete the database record
+    // Delete the database record (idempotent)
     deleteRunner.run(runner.id);
     console.log(`[reconciler] Cleaned up orphaned runner ${runner.name}`);
   } catch (error) {

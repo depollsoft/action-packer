@@ -12,7 +12,7 @@ import {
   isRunnerProcessAlive,
   trackOrphanedRunner,
   stopOrphanedRunner,
-  removeRunner
+  cleanupRunnerFiles
 } from './runnerManager.js';
 import { startDockerRunner, syncDockerRunnerStatus, isDockerAvailable, removeDockerRunner, getContainerStatus } from './dockerRunner.js';
 import { startReconciler } from './reconciler.js';
@@ -170,11 +170,9 @@ async function cleanupStaleEphemeralRunners(dockerAvailable: boolean): Promise<v
           });
         }
         
-        // Clean up runner files
+        // Clean up runner files directly (no GitHub API calls needed for stale runners)
         if (runner.runner_dir) {
-          await removeRunner(runner.id).catch(err => {
-            console.warn(`    Warning: Could not clean files for ${runner.name}:`, err.message);
-          });
+          await cleanupRunnerFiles(runner.runner_dir);
         }
       }
       
