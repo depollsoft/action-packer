@@ -121,10 +121,17 @@ export async function reconcileRunners(): Promise<void> {
 
           // Check if the local process/container is actually running
           if (runner.isolation_type === 'docker') {
-            const containerStatus = await getContainerStatus(runner.id);
-            if (!containerStatus && runner.status === 'online') {
-              // Container doesn't exist but we think it's online
-              console.log(`[reconciler] Docker runner ${runner.name} container not found, marking offline`);
+            if (runner.container_id) {
+              const containerStatus = await getContainerStatus(runner.container_id);
+              if (!containerStatus && runner.status === 'online') {
+                // Container doesn't exist but we think it's online
+                console.log(`[reconciler] Docker runner ${runner.name} container not found, marking offline`);
+                updateRunnerStatus.run('offline', runner.id);
+                stats.errorsFixed++;
+              }
+            } else if (runner.status === 'online') {
+              // No container_id but marked online - something is wrong
+              console.log(`[reconciler] Docker runner ${runner.name} has no container_id, marking offline`);
               updateRunnerStatus.run('offline', runner.id);
               stats.errorsFixed++;
             }
@@ -149,8 +156,8 @@ export async function reconcileRunners(): Promise<void> {
       SELECT * FROM runners 
       WHERE ephemeral = 1 
       AND status IN ('online', 'busy')
-      AND last_heartbeat < datetime('now', '-${staleThresholdMinutes} minutes')
-    `).all() as RunnerRow[];
+      AND last_heartbeat < datetime('now', ?)
+    `).all(`-${staleThresholdMinutes} minutes`) as RunnerRow[];
 
     for (const runner of staleRunners) {
       console.log(`[reconciler] Runner ${runner.name} has stale heartbeat, checking status...`);

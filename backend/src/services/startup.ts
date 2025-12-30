@@ -151,9 +151,9 @@ async function cleanupStaleEphemeralRunners(dockerAvailable: boolean): Promise<v
       
       // Clean up the actual resources (process/container and files)
       if (runner.isolation_type === 'docker') {
-        if (dockerAvailable) {
+        if (dockerAvailable && runner.container_id) {
           // Check if container exists and stop/remove it
-          const status = await getContainerStatus(runner.id);
+          const status = await getContainerStatus(runner.container_id);
           if (status) {
             console.log(`    Removing Docker container for ${runner.name}`);
             await removeDockerRunner(runner.id).catch(err => {

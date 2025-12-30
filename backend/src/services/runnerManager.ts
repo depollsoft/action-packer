@@ -425,7 +425,14 @@ export async function startRunner(runnerId: string, runnerDir: string): Promise<
       // Get runner info to check if ephemeral
       const runner = getRunnerById.get(runnerId) as RunnerRow | undefined;
       
-      if (runner?.ephemeral) {
+      // If the runner record no longer exists (e.g., cleaned up concurrently),
+      // skip further cleanup to avoid dereferencing undefined.
+      if (!runner) {
+        console.warn(`[runner] Runner ${runnerId} not found in database during close handler; skipping cleanup.`);
+        return;
+      }
+      
+      if (runner.ephemeral) {
         // Ephemeral runners should be cleaned up when their process exits
         // This happens when they finish a job (exit code 0) or encounter an error
         console.log(`[runner] Ephemeral runner ${runner.name} exited (code: ${code}), cleaning up...`);
