@@ -422,10 +422,62 @@ export async function startRunner(runnerId: string, runnerDir: string): Promise<
       runningProcesses.delete(runnerId);
       updateRunnerProcessId.run(null, runnerId);
       
-      if (code === 0) {
-        updateRunnerStatus.run('offline', runnerId);
+      // Get runner info to check if ephemeral
+      const runner = getRunnerById.get(runnerId) as RunnerRow | undefined;
+      
+      // If the runner record no longer exists (e.g., cleaned up concurrently),
+      // skip further cleanup to avoid dereferencing undefined.
+      if (!runner) {
+        console.warn(`[runner] Runner ${runnerId} not found in database during close handler; skipping cleanup.`);
+        return;
+      }
+      
+      if (runner.ephemeral) {
+        // Ephemeral runners should be cleaned up when their process exits
+        // This happens when they finish a job (exit code 0) or encounter an error
+        console.log(`[runner] Ephemeral runner ${runner.name} exited (code: ${code}), cleaning up...`);
+        
+        // Clean up the runner record and files (async, fire-and-forget)
+        (async () => {
+          try {
+            // Re-fetch the runner to ensure it still exists and is ephemeral
+            // (another cleanup mechanism may have already handled it)
+            const latestRunner = getRunnerById.get(runnerId) as RunnerRow | undefined;
+            if (!latestRunner || !latestRunner.ephemeral) {
+              console.warn(
+                `[runner] Runner ${runnerId} missing or no longer ephemeral during async cleanup; skipping.`
+              );
+              return;
+            }
+
+            // Delete runner directory (idempotent: force allows missing directories)
+            if (latestRunner.runner_dir) {
+              await fs.rm(latestRunner.runner_dir, { recursive: true, force: true }).catch(() => {});
+            }
+            
+            // Delete database record (idempotent: guarded on ephemeral flag)
+            db.prepare('DELETE FROM runners WHERE id = ? AND ephemeral = 1').run(runnerId);
+            console.log(`[runner] Cleaned up ephemeral runner ${latestRunner.name}`);
+            
+            // Ensure warm runners for the pool (use dynamic import to avoid circular dependency)
+            if (latestRunner.pool_id) {
+              const { ensureWarmRunners, getPoolById } = await import('./autoscaler.js');
+              const pool = getPoolById(latestRunner.pool_id);
+              if (pool) {
+                await ensureWarmRunners(pool);
+              }
+            }
+          } catch (error) {
+            console.error(`[runner] Failed to cleanup ephemeral runner ${runnerId}:`, error);
+          }
+        })();
       } else {
-        updateRunnerError.run(`Runner exited with code ${code}`, runnerId);
+        // Non-ephemeral runners just update status
+        if (code === 0) {
+          updateRunnerStatus.run('offline', runnerId);
+        } else {
+          updateRunnerError.run(`Runner exited with code ${code}`, runnerId);
+        }
       }
     });
     
@@ -490,6 +542,21 @@ export async function stopRunner(runnerId: string): Promise<void> {
   // Clear process ID in database
   updateRunnerProcessId.run(null, runnerId);
   updateRunnerStatus.run('offline', runnerId);
+}
+
+/**
+ * Clean up runner files directly without GitHub API calls.
+ * Use this for orphaned/stale runners that no longer exist in GitHub.
+ * This is idempotent - safe to call even if runner is already cleaned up.
+ */
+export async function cleanupRunnerFiles(runnerDir: string | null): Promise<void> {
+  if (!runnerDir) return;
+  
+  try {
+    await fs.rm(runnerDir, { recursive: true, force: true });
+  } catch (error) {
+    // Ignore errors - directory may already be gone
+  }
 }
 
 /**

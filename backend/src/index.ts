@@ -60,6 +60,12 @@ wss.on('connection', (ws) => {
   console.log('🔌 WebSocket client connected');
   clients.add(ws);
   
+  // Mark connection as alive for ping/pong heartbeat
+  (ws as WebSocket & { isAlive: boolean }).isAlive = true;
+  ws.on('pong', () => {
+    (ws as WebSocket & { isAlive: boolean }).isAlive = true;
+  });
+  
   ws.on('close', () => {
     console.log('🔌 WebSocket client disconnected');
     clients.delete(ws);
@@ -70,6 +76,23 @@ wss.on('connection', (ws) => {
     clients.delete(ws);
   });
 });
+
+// WebSocket ping/pong heartbeat to keep connections alive through reverse proxies
+// This prevents Cloudflare Tunnel and other proxies from timing out idle connections
+const wsHeartbeatInterval = setInterval(() => {
+  clients.forEach((ws) => {
+    const extWs = ws as WebSocket & { isAlive: boolean };
+    if (extWs.isAlive === false) {
+      console.log('🔌 Terminating unresponsive WebSocket client');
+      clients.delete(ws);
+      return ws.terminate();
+    }
+    extWs.isAlive = false;
+    ws.ping();
+  });
+}, 30000); // Ping every 30 seconds
+
+wsHeartbeatInterval.unref(); // Don't prevent process from exiting
 
 // Broadcast function for real-time updates
 export function broadcast(type: string, data: unknown): void {

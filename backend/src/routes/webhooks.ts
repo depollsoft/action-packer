@@ -9,6 +9,7 @@ import type { CredentialRow, GitHubAppRow } from '../db/schema.js';
 import { decrypt, verifyHmacSignature } from '../utils/index.js';
 import {
   removeDockerRunner,
+  removeRunner,
 } from '../services/index.js';
 import { ensureWarmRunners, getPoolEffectiveLabels, labelsMatch, scaleUp, scaleDown as autoscaleDown } from '../services/autoscaler.js';
 
@@ -209,11 +210,14 @@ webhooksRouter.post('/github', async (req: Request, res: Response) => {
           if (runner) {
             if (runner.ephemeral) {
               // Ephemeral runner will be removed by GitHub
-              // We can clean up our record
+              // We can clean up our record and resources
               setTimeout(async () => {
                 try {
                   if (runner.isolation_type === 'docker') {
                     await removeDockerRunner(runner.id);
+                  } else {
+                    // Clean up native runner process and files
+                    await removeRunner(runner.id);
                   }
                   db.prepare('DELETE FROM runners WHERE id = ?').run(runner.id);
                   console.log(`[autoscale] Cleaned up ephemeral runner ${runner.name}`);

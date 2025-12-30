@@ -10,9 +10,12 @@ import {
   isRunnerRunning, 
   syncRunnerStatus,
   isRunnerProcessAlive,
-  trackOrphanedRunner
+  trackOrphanedRunner,
+  stopOrphanedRunner,
+  cleanupRunnerFiles
 } from './runnerManager.js';
-import { startDockerRunner, syncDockerRunnerStatus, isDockerAvailable } from './dockerRunner.js';
+import { startDockerRunner, syncDockerRunnerStatus, isDockerAvailable, removeDockerRunner, getContainerStatus } from './dockerRunner.js';
+import { startReconciler } from './reconciler.js';
 
 // Prepared statements
 const getAllEnabledPools = db.prepare(`
@@ -45,14 +48,17 @@ export async function initializeRunnersOnStartup(): Promise<void> {
     console.log('ℹ️  Docker not available - skipping Docker runner initialization');
   }
 
-  // 1. Handle non-ephemeral (static) runners - try to restart them
-  await restartStaticRunners(dockerAvailable);
+  // 1. Clean up stale ephemeral runners FIRST (before creating new ones)
+  await cleanupStaleEphemeralRunners(dockerAvailable);
 
-  // 2. Clean up stale ephemeral runners from previous server runs
-  await cleanupStaleEphemeralRunners();
+  // 2. Handle non-ephemeral (static) runners - try to restart them
+  await restartStaticRunners(dockerAvailable);
 
   // 3. Ensure warm runners for all enabled pools
   await initializePoolWarmRunners(dockerAvailable);
+
+  // 4. Start the periodic reconciliation service
+  startReconciler();
 
   console.log('✅ Runner initialization complete');
 }
@@ -128,8 +134,9 @@ async function restartStaticRunners(dockerAvailable: boolean): Promise<void> {
 /**
  * Clean up stale ephemeral runners that were left over from a previous server run
  * Ephemeral runners should not persist across restarts - they get recreated by the pool
+ * This now properly cleans up processes/containers, not just DB records
  */
-async function cleanupStaleEphemeralRunners(): Promise<void> {
+async function cleanupStaleEphemeralRunners(dockerAvailable: boolean): Promise<void> {
   const staleRunners = getPooledEphemeralRunners.all() as RunnerRow[];
   
   if (staleRunners.length === 0) {
@@ -140,10 +147,38 @@ async function cleanupStaleEphemeralRunners(): Promise<void> {
 
   for (const runner of staleRunners) {
     try {
-      // Mark as offline first, then delete
-      // The pool will recreate warm runners as needed
-      console.log(`  Removing stale runner ${runner.name}`);
+      console.log(`  Removing stale runner ${runner.name}...`);
+      
+      // Clean up the actual resources (process/container and files)
+      if (runner.isolation_type === 'docker') {
+        if (dockerAvailable && runner.container_id) {
+          // Check if container exists and stop/remove it
+          const status = await getContainerStatus(runner.container_id);
+          if (status) {
+            console.log(`    Removing Docker container for ${runner.name}`);
+            await removeDockerRunner(runner.id).catch(err => {
+              console.warn(`    Warning: Could not remove container for ${runner.name}:`, err.message);
+            });
+          }
+        }
+      } else {
+        // Native runner - stop any orphaned process and clean up files
+        if (runner.process_id && isRunnerProcessAlive(runner.id, runner.process_id)) {
+          console.log(`    Stopping orphaned process for ${runner.name} (PID: ${runner.process_id})`);
+          await stopOrphanedRunner(runner.id, runner.process_id).catch(err => {
+            console.warn(`    Warning: Could not stop process for ${runner.name}:`, err.message);
+          });
+        }
+        
+        // Clean up runner files directly (no GitHub API calls needed for stale runners)
+        if (runner.runner_dir) {
+          await cleanupRunnerFiles(runner.runner_dir);
+        }
+      }
+      
+      // Delete the database record
       deleteRunner.run(runner.id);
+      console.log(`  ✓ Cleaned up ${runner.name}`);
     } catch (error) {
       console.error(`  Failed to cleanup runner ${runner.name}:`, error);
     }
