@@ -308,12 +308,15 @@ export async function cleanupOrphanedDirectories(): Promise<number> {
       await fs.access(RUNNERS_DIR);
     } catch {
       // Directory doesn't exist, nothing to clean up
+      console.log(`[reconciler] Runners directory does not exist: ${RUNNERS_DIR}`);
       return 0;
     }
 
     // List all directories in the runners directory
     const entries = await fs.readdir(RUNNERS_DIR, { withFileTypes: true });
     const directories = entries.filter(e => e.isDirectory()).map(e => e.name);
+
+    console.log(`[reconciler] Found ${directories.length} director${directories.length === 1 ? 'y' : 'ies'} in ${RUNNERS_DIR}`);
 
     if (directories.length === 0) {
       return 0;
@@ -330,10 +333,13 @@ export async function cleanupOrphanedDirectories(): Promise<number> {
         .map(r => path.basename(r.runner_dir!))
     );
 
+    console.log(`[reconciler] Database has ${dbRunners.length} runner(s), checking for orphaned directories...`);
+
     // Find directories that don't have a corresponding database entry
     for (const dir of directories) {
       // Skip if this directory ID exists in the database or if the path is in use
       if (dbRunnerIds.has(dir) || dbRunnerDirs.has(dir)) {
+        console.log(`[reconciler] Directory ${dir} is in use, skipping`);
         continue;
       }
 
