@@ -300,20 +300,26 @@ async function cleanupOrphanedRunner(runner: RunnerRow): Promise<void> {
  * Exported for use at startup and in tests.
  */
 export async function cleanupOrphanedDirectories(): Promise<number> {
+  console.log('[reconciler] cleanupOrphanedDirectories() called');
   let removed = 0;
   
   try {
+    console.log(`[reconciler] RUNNERS_DIR = ${RUNNERS_DIR}`);
+    
     // Check if runners directory exists
     try {
       await fs.access(RUNNERS_DIR);
-    } catch {
+      console.log(`[reconciler] RUNNERS_DIR exists`);
+    } catch (accessErr) {
       // Directory doesn't exist, nothing to clean up
+      console.log(`[reconciler] RUNNERS_DIR does not exist: ${accessErr}`);
       return 0;
     }
 
     // List all directories in the runners directory
     const entries = await fs.readdir(RUNNERS_DIR, { withFileTypes: true });
     const directories = entries.filter(e => e.isDirectory()).map(e => e.name);
+    console.log(`[reconciler] Found ${directories.length} directories on disk: ${directories.join(', ')}`);
 
     if (directories.length === 0) {
       return 0;
@@ -321,6 +327,11 @@ export async function cleanupOrphanedDirectories(): Promise<number> {
 
     // Get all runner IDs from the database
     const dbRunners = db.prepare('SELECT id, runner_dir FROM runners').all() as { id: string; runner_dir: string | null }[];
+    console.log(`[reconciler] Found ${dbRunners.length} runners in database`);
+    for (const r of dbRunners) {
+      console.log(`[reconciler]   DB runner: id=${r.id}, runner_dir=${r.runner_dir}`);
+    }
+    
     const dbRunnerIds = new Set(dbRunners.map(r => r.id));
     
     // Also track runner directories that are in use
@@ -329,17 +340,23 @@ export async function cleanupOrphanedDirectories(): Promise<number> {
         .filter(r => r.runner_dir)
         .map(r => path.basename(r.runner_dir!))
     );
+    console.log(`[reconciler] DB runner IDs: ${[...dbRunnerIds].join(', ')}`);
+    console.log(`[reconciler] DB runner dirs (basenames): ${[...dbRunnerDirs].join(', ')}`);
 
     // Find directories that don't have a corresponding database entry
     for (const dir of directories) {
+      const inDbById = dbRunnerIds.has(dir);
+      const inDbByDir = dbRunnerDirs.has(dir);
+      console.log(`[reconciler] Checking dir ${dir}: inDbById=${inDbById}, inDbByDir=${inDbByDir}`);
+      
       // Skip if this directory ID exists in the database or if the path is in use
-      if (dbRunnerIds.has(dir) || dbRunnerDirs.has(dir)) {
+      if (inDbById || inDbByDir) {
         continue;
       }
 
       // This is an orphaned directory - remove it
       const dirPath = path.join(RUNNERS_DIR, dir);
-      console.log(`[reconciler] Removing orphaned runner directory: ${dir}`);
+      console.log(`[reconciler] Removing orphaned runner directory: ${dirPath}`);
       
       try {
         await fs.rm(dirPath, { recursive: true, force: true });
