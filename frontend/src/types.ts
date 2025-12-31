@@ -56,6 +56,9 @@ export type RunnerPool = {
   max_runners: number;
   warm_runners: number;
   idle_timeout_minutes: number;
+  enableKvm: boolean;
+  enableDockerSocket: boolean;
+  enablePrivileged: boolean;
   enabled: boolean;
   runner_count: number;
   online_count: number;

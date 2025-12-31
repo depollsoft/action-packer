@@ -203,6 +203,9 @@ export const poolsApi = {
     maxRunners?: number;
     warmRunners?: number;
     idleTimeoutMinutes?: number;
+    enableKvm?: boolean;
+    enableDockerSocket?: boolean;
+    enablePrivileged?: boolean;
   }) => request<PoolResponse>('/api/pools', {
     method: 'POST',
     body: JSON.stringify(data),
@@ -216,6 +219,9 @@ export const poolsApi = {
     warmRunners?: number;
     idleTimeoutMinutes?: number;
     enabled?: boolean;
+    enableKvm?: boolean;
+    enableDockerSocket?: boolean;
+    enablePrivileged?: boolean;
   }) => request<PoolResponse>(`/api/pools/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(data),

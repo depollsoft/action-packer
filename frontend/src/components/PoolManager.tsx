@@ -27,6 +27,9 @@ type PoolFormData = {
   maxRunners: number;
   warmRunners: number;
   idleTimeoutMinutes: number;
+  enableKvm: boolean;
+  enableDockerSocket: boolean;
+  enablePrivileged: boolean;
 };
 
 function AddPoolForm({
@@ -50,6 +53,9 @@ function AddPoolForm({
     maxRunners: 5,
     warmRunners: 1,
     idleTimeoutMinutes: 10,
+    enableKvm: false,
+    enableDockerSocket: false,
+    enablePrivileged: false,
   });
   const [error, setError] = useState<string | null>(null);
   const [architectureTouched, setArchitectureTouched] = useState(false);
@@ -89,6 +95,9 @@ function AddPoolForm({
       maxRunners: formData.maxRunners,
       warmRunners: formData.warmRunners,
       idleTimeoutMinutes: formData.idleTimeoutMinutes,
+      enableKvm: formData.isolationType === 'docker' ? formData.enableKvm : undefined,
+      enableDockerSocket: formData.isolationType === 'docker' ? formData.enableDockerSocket : undefined,
+      enablePrivileged: formData.isolationType === 'docker' ? formData.enablePrivileged : undefined,
     });
   };
   
@@ -183,6 +192,69 @@ function AddPoolForm({
                 </p>
               )}
             </div>
+          )}
+          
+          {formData.isolationType === 'docker' && systemInfo?.platform === 'linux' && (
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="enableKvm"
+                className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-800"
+                checked={formData.enableKvm}
+                onChange={(e) => setFormData({ ...formData, enableKvm: e.target.checked })}
+              />
+              <label htmlFor="enableKvm" className="text-sm">
+                Enable KVM (hardware virtualization)
+              </label>
+            </div>
+          )}
+          {formData.isolationType === 'docker' && systemInfo?.platform === 'linux' && formData.enableKvm && (
+            <p className="text-xs text-muted -mt-2">
+              Enables /dev/kvm passthrough for Android emulators and nested virtualization.
+              Requires KVM support on the host.
+            </p>
+          )}
+          
+          {formData.isolationType === 'docker' && (
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="enableDockerSocket"
+                className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-800"
+                checked={formData.enableDockerSocket}
+                onChange={(e) => setFormData({ ...formData, enableDockerSocket: e.target.checked })}
+              />
+              <label htmlFor="enableDockerSocket" className="text-sm">
+                Mount Docker socket (Docker-out-of-Docker)
+              </label>
+            </div>
+          )}
+          {formData.isolationType === 'docker' && formData.enableDockerSocket && (
+            <p className="text-xs text-muted -mt-2">
+              Mounts /var/run/docker.sock to use the host's Docker daemon.
+              Faster, but containers share the host's Docker environment.
+            </p>
+          )}
+          
+          {formData.isolationType === 'docker' && (
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="enablePrivileged"
+                className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-800"
+                checked={formData.enablePrivileged}
+                onChange={(e) => setFormData({ ...formData, enablePrivileged: e.target.checked })}
+              />
+              <label htmlFor="enablePrivileged" className="text-sm">
+                Privileged mode (Docker-in-Docker)
+              </label>
+            </div>
+          )}
+          {formData.isolationType === 'docker' && formData.enablePrivileged && (
+            <p className="text-xs text-yellow-400 -mt-2">
+              ⚠️ Runs container in privileged mode. Required for true Docker-in-Docker
+              but grants elevated permissions. Use with caution.
+            </p>
           )}
           
           <div className="grid grid-cols-2 gap-4">
@@ -339,6 +411,25 @@ function PoolCard({
           <span>Warm: {pool.warm_runners}</span>
           <span>Idle timeout: {pool.idle_timeout_minutes}m</span>
         </div>
+        {(pool.enableKvm || pool.enableDockerSocket || pool.enablePrivileged) && (
+          <div className="flex flex-wrap gap-2 mt-2 text-xs">
+            {pool.enableKvm && (
+              <span className="text-blue-400" title="KVM hardware virtualization enabled">
+                KVM
+              </span>
+            )}
+            {pool.enableDockerSocket && (
+              <span className="text-green-400" title="Docker socket mounted">
+                Docker socket
+              </span>
+            )}
+            {pool.enablePrivileged && (
+              <span className="text-yellow-400" title="Privileged mode enabled">
+                Privileged
+              </span>
+            )}
+          </div>
+        )}
       </div>
       
       {/* Labels */}

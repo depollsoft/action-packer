@@ -131,7 +131,11 @@ export async function scaleUp(pool: RunnerPoolRow): Promise<string | null> {
     void (async () => {
       try {
         if (pool.isolation_type === 'docker') {
-          await createDockerRunner(runnerId, runnerName, labels, pool.credential_id, pool.architecture, true);
+          await createDockerRunner(runnerId, runnerName, labels, pool.credential_id, pool.architecture, true, {
+            enableKvm: Boolean(pool.enable_kvm),
+            enableDockerSocket: Boolean(pool.enable_docker_socket),
+            enablePrivileged: Boolean(pool.enable_privileged),
+          });
           return;
         }
 

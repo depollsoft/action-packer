@@ -143,6 +143,15 @@ export async function pullRunnerImage(
 }
 
 /**
+ * Docker runner options
+ */
+export type DockerRunnerOptions = {
+  enableKvm?: boolean;
+  enableDockerSocket?: boolean;
+  enablePrivileged?: boolean;
+};
+
+/**
  * Create and start a Docker-based runner
  */
 export async function createDockerRunner(
@@ -151,8 +160,10 @@ export async function createDockerRunner(
   labels: string[],
   credentialId: string,
   architecture: string,
-  ephemeral: boolean = false
+  ephemeral: boolean = false,
+  options: DockerRunnerOptions = {}
 ): Promise<string> {
+  const { enableKvm = false, enableDockerSocket = false, enablePrivileged = false } = options;
   const d = initDocker();
 
   // Normalize architecture for Docker platform strings
@@ -204,15 +215,41 @@ export async function createDockerRunner(
   updateRunnerStatus.run('configuring', runnerId);
   
   try {
+    // Build HostConfig with optional features
+    const hostConfig: Docker.HostConfig = {
+      AutoRemove: ephemeral,
+      RestartPolicy: ephemeral ? { Name: 'no' } : { Name: 'unless-stopped' },
+    };
+    
+    // Enable KVM for Linux virtualization support (Android emulators, nested VMs, etc.)
+    if (enableKvm) {
+      hostConfig.Devices = hostConfig.Devices || [];
+      hostConfig.Devices.push({
+        PathOnHost: '/dev/kvm',
+        PathInContainer: '/dev/kvm',
+        CgroupPermissions: 'rwm',
+      });
+    }
+    
+    // Mount Docker socket for Docker-out-of-Docker (use host's Docker daemon)
+    if (enableDockerSocket) {
+      hostConfig.Binds = hostConfig.Binds || [];
+      hostConfig.Binds.push('/var/run/docker.sock:/var/run/docker.sock');
+      // Add docker group access (usually gid 999 or 998)
+      hostConfig.GroupAdd = ['docker'];
+    }
+    
+    // Enable privileged mode for true Docker-in-Docker (nested Docker daemon)
+    if (enablePrivileged) {
+      hostConfig.Privileged = true;
+    }
+    
     // Create container using the architecture-specific image tag
     const container = await d.createContainer({
       Image: imageTag,
       name: `action-packer-${runnerId}`,
       Env: env,
-      HostConfig: {
-        AutoRemove: ephemeral,
-        RestartPolicy: ephemeral ? { Name: 'no' } : { Name: 'unless-stopped' },
-      },
+      HostConfig: hostConfig,
       Labels: {
         'action-packer.runner-id': runnerId,
         'action-packer.runner-name': name,
