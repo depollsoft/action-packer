@@ -10,11 +10,14 @@ import {
   Pause,
   Play,
   Download,
+  Copy,
+  Check,
   Radio,
   Wifi,
   WifiOff,
 } from 'lucide-react';
 import { logsApi } from '../api';
+import { useCopyToClipboard } from '../hooks';
 import type { Runner, RunnerLogEntry } from '../types';
 
 interface RunnerLogsModalProps {
@@ -33,6 +36,7 @@ export function RunnerLogsModal({ runner, onClose }: RunnerLogsModalProps) {
   const eventSourceRef = useRef<EventSource | null>(null);
   // Use ref for isPaused to avoid closure issues in event handlers
   const isPausedRef = useRef(isPaused);
+  const { copied, copyToClipboard } = useCopyToClipboard();
   
   // Keep ref in sync with state
   useEffect(() => {
@@ -150,6 +154,14 @@ export function RunnerLogsModal({ runner, onClose }: RunnerLogsModalProps) {
     }
   };
 
+  const handleCopy = () => {
+    const logs = isStreaming ? streamLogs : (initialData?.logs || []);
+    const content = logs
+      .map((l) => `${l.timestamp} ${l.message}`)
+      .join('\n');
+    copyToClipboard(content);
+  };
+
   const handleDownload = () => {
     const logs = isStreaming ? streamLogs : (initialData?.logs || []);
     const content = logs
@@ -224,6 +236,15 @@ export function RunnerLogsModal({ runner, onClose }: RunnerLogsModalProps) {
             {/* Refresh */}
             <button onClick={handleRefresh} className="btn btn-secondary" title="Refresh">
               <RefreshCw className="h-4 w-4" />
+            </button>
+
+            {/* Copy */}
+            <button
+              onClick={handleCopy}
+              className={`btn ${copied ? 'btn-primary' : 'btn-secondary'}`}
+              title={copied ? 'Copied!' : 'Copy logs to clipboard'}
+            >
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </button>
 
             {/* Download */}

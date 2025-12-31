@@ -10,6 +10,8 @@ import {
   Pause,
   Play,
   Download,
+  Copy,
+  Check,
   Filter,
   ChevronDown,
   AlertCircle,
@@ -18,7 +20,7 @@ import {
   Bug,
 } from 'lucide-react';
 import { logsApi } from '../api';
-import { useWebSocket } from '../hooks';
+import { useWebSocket, useCopyToClipboard } from '../hooks';
 import type { LogEntry, LogLevel } from '../types';
 
 const levelColors: Record<LogLevel, string> = {
@@ -78,6 +80,7 @@ export function LogViewer() {
   const [autoScroll, setAutoScroll] = useState(true);
   const queryClient = useQueryClient();
   const { lastMessage } = useWebSocket();
+  const { copied, copyToClipboard } = useCopyToClipboard();
 
   // Close filter menu when clicking outside
   useEffect(() => {
@@ -167,6 +170,14 @@ export function LogViewer() {
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ['logs'] });
+  };
+
+  const handleCopy = () => {
+    const filteredLogs = filter === 'all' ? logs : logs.filter((l) => l.level === filter);
+    const content = filteredLogs
+      .map((l) => `${l.timestamp} [${l.level.toUpperCase()}] ${l.message}`)
+      .join('\n');
+    copyToClipboard(content);
   };
 
   const handleDownload = () => {
@@ -278,6 +289,15 @@ export function LogViewer() {
           {/* Refresh */}
           <button onClick={handleRefresh} className="btn btn-secondary" title="Refresh logs">
             <RefreshCw className="h-4 w-4" />
+          </button>
+
+          {/* Copy */}
+          <button
+            onClick={handleCopy}
+            className={`btn ${copied ? 'btn-primary' : 'btn-secondary'}`}
+            title={copied ? 'Copied!' : 'Copy logs to clipboard'}
+          >
+            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
           </button>
 
           {/* Download */}
