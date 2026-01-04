@@ -232,6 +232,8 @@ function AddRunnerForm({
 
 function RunnerRow({
   runner,
+  selected,
+  onSelect,
   onStart,
   onStop,
   onSync,
@@ -239,12 +241,16 @@ function RunnerRow({
   onViewLogs,
 }: {
   runner: Runner;
+  selected: boolean;
+  onSelect: (id: string, selected: boolean) => void;
   onStart: (id: string) => void;
   onStop: (id: string) => void;
   onSync: (id: string) => void;
   onDelete: (id: string) => void;
   onViewLogs: (runner: Runner) => void;
 }) {
+  const isOrphaned = runner.ephemeral && !runner.pool_id;
+  
   const platformIcons: Record<string, string> = {
     darwin: '🍎',
     linux: '🐧',
@@ -264,12 +270,27 @@ function RunnerRow({
   const canViewLogs = runner.isolation_type === 'docker' || runner.runner_dir;
   
   return (
-    <tr>
+    <tr className={isOrphaned ? 'bg-yellow-900/20' : ''}>
+      <td>
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={(e) => onSelect(runner.id, e.target.checked)}
+          className="w-4 h-4 rounded border-forest-600 bg-forest-800 text-forest-400 focus:ring-forest-500"
+        />
+      </td>
       <td>
         <div className="flex items-center gap-3">
           <span className="text-xl">{platformIcons[effectivePlatform] || '💻'}</span>
           <div>
-            <div className="font-medium">{runner.name}</div>
+            <div className="font-medium flex items-center gap-2">
+              {runner.name}
+              {isOrphaned && (
+                <span className="px-1.5 py-0.5 bg-yellow-700 rounded text-xs text-yellow-200" title="Ephemeral runner with no pool - likely orphaned">
+                  orphaned
+                </span>
+              )}
+            </div>
             <div className="text-xs text-muted">{runner.target}</div>
           </div>
         </div>
@@ -363,6 +384,8 @@ function RunnerRow({
 export function RunnerManager() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedRunnerForLogs, setSelectedRunnerForLogs] = useState<Runner | null>(null);
+  const [selectedRunnerIds, setSelectedRunnerIds] = useState<Set<string>>(new Set());
+  const [showOrphanedOnly, setShowOrphanedOnly] = useState(false);
   const queryClient = useQueryClient();
   
   const { data: runnersData, isLoading: runnersLoading } = useQuery({
@@ -398,7 +421,10 @@ export function RunnerManager() {
   
   const deleteMutation = useMutation({
     mutationFn: runnersApi.delete,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runners'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['runners'] });
+      setSelectedRunnerIds(new Set());
+    },
   });
   
   const handleDelete = (id: string) => {
@@ -409,6 +435,71 @@ export function RunnerManager() {
   
   const runners = runnersData?.runners || [];
   const credentials = credentialsData?.credentials || [];
+  
+  // Filter runners based on orphaned filter
+  const filteredRunners = showOrphanedOnly 
+    ? runners.filter(r => r.ephemeral && !r.pool_id)
+    : runners;
+  
+  const orphanedCount = runners.filter(r => r.ephemeral && !r.pool_id).length;
+  
+  // Selection helpers
+  const handleSelectRunner = (id: string, selected: boolean) => {
+    setSelectedRunnerIds(prev => {
+      const next = new Set(prev);
+      if (selected) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  };
+  
+  const handleSelectAll = (selected: boolean) => {
+    if (selected) {
+      setSelectedRunnerIds(new Set(filteredRunners.map(r => r.id)));
+    } else {
+      setSelectedRunnerIds(new Set());
+    }
+  };
+  
+  const handleBulkDelete = async () => {
+    const count = selectedRunnerIds.size;
+    if (count === 0) return;
+    
+    if (!confirm(`Are you sure you want to delete ${count} runner${count === 1 ? '' : 's'}? This will stop the runners and deregister them from GitHub.`)) {
+      return;
+    }
+    
+    // Delete runners in parallel (could be further optimized with a bulk API endpoint)
+    const ids = Array.from(selectedRunnerIds);
+    const results = await Promise.allSettled(
+      ids.map(id => runnersApi.delete(id))
+    );
+    
+    // Collect and report failures
+    const failedIds: string[] = [];
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        console.error(`Failed to delete runner ${ids[index]}:`, result.reason);
+        failedIds.push(ids[index]);
+      }
+    });
+    
+    if (failedIds.length > 0) {
+      alert(
+        `Failed to delete ${failedIds.length} runner${failedIds.length === 1 ? '' : 's'}. ` +
+        'Please check the console for more details and try again.'
+      );
+    }
+    
+    setSelectedRunnerIds(new Set());
+    queryClient.invalidateQueries({ queryKey: ['runners'] });
+  };
+  
+  const allFilteredSelected = filteredRunners.length > 0 && filteredRunners.every(r => selectedRunnerIds.has(r.id));
+  const someFilteredSelected = filteredRunners.some(r => selectedRunnerIds.has(r.id));
   
   return (
     <div className="space-y-6">
@@ -451,23 +542,76 @@ export function RunnerManager() {
           </p>
         </div>
       ) : (
-        <div className="card p-0 overflow-hidden">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Runner</th>
-                <th>Status</th>
-                <th>OS/Arch</th>
-                <th>Isolation</th>
-                <th>Labels</th>
+        <>
+          {/* Filter and bulk actions bar */}
+          <div className="card flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showOrphanedOnly}
+                  onChange={(e) => {
+                    setShowOrphanedOnly(e.target.checked);
+                    setSelectedRunnerIds(new Set());
+                  }}
+                  className="w-4 h-4 rounded border-forest-600 bg-forest-800 text-forest-400 focus:ring-forest-500"
+                />
+                <span className="text-sm">
+                  Show orphaned only
+                  {orphanedCount > 0 && (
+                    <span className="ml-1 px-1.5 py-0.5 bg-yellow-700 rounded text-xs text-yellow-200">
+                      {orphanedCount}
+                    </span>
+                  )}
+                </span>
+              </label>
+              {selectedRunnerIds.size > 0 && (
+                <span className="text-sm text-muted">
+                  {selectedRunnerIds.size} selected
+                </span>
+              )}
+            </div>
+            {selectedRunnerIds.size > 0 && (
+              <button
+                onClick={handleBulkDelete}
+                className="btn btn-sm bg-red-700 hover:bg-red-600 text-white"
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                Delete Selected ({selectedRunnerIds.size})
+              </button>
+            )}
+          </div>
+          
+          <div className="card p-0 overflow-hidden">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th className="w-10">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someFilteredSelected && !allFilteredSelected;
+                      }}
+                      onChange={(e) => handleSelectAll(e.target.checked)}
+                      className="w-4 h-4 rounded border-forest-600 bg-forest-800 text-forest-400 focus:ring-forest-500"
+                    />
+                  </th>
+                  <th>Runner</th>
+                  <th>Status</th>
+                  <th>OS/Arch</th>
+                  <th>Isolation</th>
+                  <th>Labels</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {runners.map((runner) => (
+              {filteredRunners.map((runner) => (
                 <RunnerRow
                   key={runner.id}
                   runner={runner}
+                  selected={selectedRunnerIds.has(runner.id)}
+                  onSelect={handleSelectRunner}
                   onStart={startMutation.mutate}
                   onStop={stopMutation.mutate}
                   onSync={syncMutation.mutate}
@@ -478,6 +622,7 @@ export function RunnerManager() {
             </tbody>
           </table>
         </div>
+        </>
       )}
       
       {/* Add Form Modal */}
