@@ -13,6 +13,7 @@ import {
   Users,
   Activity,
   AlertCircle,
+  Pencil,
 } from 'lucide-react';
 import { poolsApi, credentialsApi, runnersApi } from '../api';
 import type { RunnerPool, IsolationType, Credential, SystemInfo } from '../types';
@@ -269,14 +270,214 @@ function AddPoolForm({
   );
 }
 
+type EditPoolFormData = {
+  name: string;
+  labels: string;
+  minRunners: number;
+  maxRunners: number;
+  warmRunners: number;
+  idleTimeoutMinutes: number;
+};
+
+function EditPoolForm({
+  pool,
+  onClose,
+  onSuccess,
+}: {
+  pool: RunnerPool;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [formData, setFormData] = useState<EditPoolFormData>({
+    name: pool.name,
+    labels: pool.labels.join(', '),
+    minRunners: pool.min_runners,
+    maxRunners: pool.max_runners,
+    warmRunners: pool.warm_runners,
+    idleTimeoutMinutes: pool.idle_timeout_minutes,
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  const updateMutation = useMutation({
+    mutationFn: (data: Parameters<typeof poolsApi.update>[1]) =>
+      poolsApi.update(pool.id, data),
+    onSuccess: () => {
+      onSuccess();
+      onClose();
+    },
+    onError: (err: Error) => {
+      setError(err.message);
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    const labels = formData.labels
+      .split(',')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    // Validate
+    if (formData.minRunners > formData.maxRunners) {
+      setError('Min runners cannot exceed max runners');
+      return;
+    }
+    if (formData.warmRunners > formData.maxRunners) {
+      setError('Warm runners cannot exceed max runners');
+      return;
+    }
+
+    updateMutation.mutate({
+      name: formData.name,
+      labels,
+      minRunners: formData.minRunners,
+      maxRunners: formData.maxRunners,
+      warmRunners: formData.warmRunners,
+      idleTimeoutMinutes: formData.idleTimeoutMinutes,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="card w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+        <h2 className="text-lg font-semibold mb-4">Edit Pool: {pool.name}</h2>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="label">Pool Name</label>
+            <input
+              type="text"
+              className="input"
+              placeholder="my-pool"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              required
+            />
+          </div>
+
+          <div>
+            <label className="label">Labels (comma-separated)</label>
+            <input
+              type="text"
+              className="input"
+              placeholder="self-hosted, linux, x64"
+              value={formData.labels}
+              onChange={(e) => setFormData({ ...formData, labels: e.target.value })}
+            />
+          </div>
+
+          {/* Read-only info */}
+          <div className="p-3 bg-forest-800/50 rounded-md text-sm text-muted space-y-1">
+            <p>
+              <span className="font-medium text-forest-200">Credential:</span>{' '}
+              {pool.credential_name} ({pool.target})
+            </p>
+            <p>
+              <span className="font-medium text-forest-200">Isolation:</span>{' '}
+              {pool.isolation_type}
+            </p>
+            <p>
+              <span className="font-medium text-forest-200">Platform:</span>{' '}
+              {pool.platform} / {pool.architecture}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Min Runners</label>
+              <input
+                type="number"
+                className="input"
+                min={0}
+                value={formData.minRunners}
+                onChange={(e) =>
+                  setFormData({ ...formData, minRunners: parseInt(e.target.value) || 0 })
+                }
+              />
+            </div>
+            <div>
+              <label className="label">Max Runners</label>
+              <input
+                type="number"
+                className="input"
+                min={1}
+                value={formData.maxRunners}
+                onChange={(e) =>
+                  setFormData({ ...formData, maxRunners: parseInt(e.target.value) || 1 })
+                }
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Warm Runners</label>
+              <input
+                type="number"
+                className="input"
+                min={0}
+                value={formData.warmRunners}
+                onChange={(e) =>
+                  setFormData({ ...formData, warmRunners: parseInt(e.target.value) || 0 })
+                }
+              />
+              <p className="text-xs text-muted mt-1">Pre-warmed idle runners</p>
+            </div>
+            <div>
+              <label className="label">Idle Timeout (min)</label>
+              <input
+                type="number"
+                className="input"
+                min={1}
+                value={formData.idleTimeoutMinutes}
+                onChange={(e) =>
+                  setFormData({ ...formData, idleTimeoutMinutes: parseInt(e.target.value) || 10 })
+                }
+              />
+            </div>
+          </div>
+
+          {error && (
+            <div className="p-3 bg-red-900/50 border border-red-700 rounded-md text-sm text-red-200">
+              {error}
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn btn-secondary flex-1"
+              disabled={updateMutation.isPending}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary flex-1"
+              disabled={updateMutation.isPending}
+            >
+              {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function PoolCard({
   pool,
   onToggle,
   onDelete,
+  onEdit,
 }: {
   pool: RunnerPool;
   onToggle: (id: string, enabled: boolean) => void;
   onDelete: (id: string) => void;
+  onEdit: (pool: RunnerPool) => void;
 }) {
   return (
     <div className="card">
@@ -292,6 +493,13 @@ function PoolCard({
         </div>
         
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => onEdit(pool)}
+            className="btn btn-ghost btn-sm text-forest-300"
+            title="Edit pool"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
           <button
             onClick={() => onToggle(pool.id, !pool.enabled)}
             className={`btn btn-ghost btn-sm ${pool.enabled ? 'text-green-400' : 'text-gray-400'}`}
@@ -360,6 +568,7 @@ function PoolCard({
 
 export function PoolManager() {
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingPool, setEditingPool] = useState<RunnerPool | null>(null);
   const queryClient = useQueryClient();
   
   const { data: poolsData, isLoading } = useQuery({
@@ -457,6 +666,7 @@ export function PoolManager() {
               pool={pool}
               onToggle={(id, enabled) => toggleMutation.mutate({ id, enabled })}
               onDelete={handleDelete}
+              onEdit={setEditingPool}
             />
           ))}
         </div>
@@ -468,6 +678,17 @@ export function PoolManager() {
           credentials={credentials}
           systemInfo={systemInfo}
           onClose={() => setShowAddForm(false)}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['pools'] });
+          }}
+        />
+      )}
+
+      {/* Edit Form Modal */}
+      {editingPool && (
+        <EditPoolForm
+          pool={editingPool}
+          onClose={() => setEditingPool(null)}
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ['pools'] });
           }}

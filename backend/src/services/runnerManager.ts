@@ -20,6 +20,154 @@ import { createClientFromCredentialId, resolveCredentialById } from './credentia
 // Runner storage directory
 export const RUNNERS_DIR = process.env.RUNNERS_DIR || path.join(os.homedir(), '.action-packer', 'runners');
 
+/**
+ * Get the cache directory paths for a specific runner.
+ * Each runner gets its own isolated cache directories to avoid conflicts.
+ */
+export function getRunnerCachePaths(runnerDir: string): { [key: string]: string } {
+  const cacheBase = path.join(runnerDir, '_caches');
+  return {
+    cacheBase,
+    gradleHome: path.join(cacheBase, 'gradle'),
+    npmCache: path.join(cacheBase, 'npm'),
+    cocoapodsCache: path.join(cacheBase, 'cocoapods'),
+    derivedData: path.join(cacheBase, 'DerivedData'),
+    androidHome: path.join(cacheBase, 'android'),
+    wrapperBin: path.join(cacheBase, 'bin'),
+  };
+}
+
+/**
+ * xcodebuild wrapper script that automatically adds -derivedDataPath.
+ * This is installed in each runner's PATH to intercept xcodebuild calls.
+ */
+const XCODEBUILD_WRAPPER = `#!/bin/bash
+# Action Packer xcodebuild wrapper - automatically routes DerivedData to per-runner directory
+DERIVED_DATA_PATH="\${RUNNER_DERIVED_DATA_PATH:-}"
+REAL_XCODEBUILD="/usr/bin/xcodebuild"
+
+if [ -z "$DERIVED_DATA_PATH" ]; then
+  # No custom path set, use real xcodebuild directly
+  exec "$REAL_XCODEBUILD" "$@"
+fi
+
+# Check if -derivedDataPath is already specified
+for arg in "$@"; do
+  if [ "$arg" = "-derivedDataPath" ]; then
+    # User already specified it, don't override
+    exec "$REAL_XCODEBUILD" "$@"
+  fi
+done
+
+# Add our derived data path
+exec "$REAL_XCODEBUILD" -derivedDataPath "$DERIVED_DATA_PATH" "$@"
+`;
+
+/**
+ * Create cache directories, install wrapper scripts, and return environment variables.
+ */
+export async function setupRunnerCacheEnv(runnerDir: string): Promise<{ [key: string]: string }> {
+  const cachePaths = getRunnerCachePaths(runnerDir);
+  const { platform } = detectPlatform();
+
+  // Create all cache directories
+  await Promise.all(
+    Object.values(cachePaths).map(dir => fs.mkdir(dir, { recursive: true }))
+  );
+
+  // Install xcodebuild wrapper on macOS
+  if (platform === 'darwin') {
+    const wrapperPath = path.join(cachePaths.wrapperBin, 'xcodebuild');
+    await fs.writeFile(wrapperPath, XCODEBUILD_WRAPPER, { mode: 0o755 });
+  }
+
+  // Return environment variables that tools will use
+  return {
+    // Gradle
+    GRADLE_USER_HOME: cachePaths.gradleHome,
+    // npm
+    npm_config_cache: cachePaths.npmCache,
+    // CocoaPods
+    CP_CACHE_DIR: cachePaths.cocoapodsCache,
+    // Android
+    ANDROID_USER_HOME: cachePaths.androidHome,
+    // Xcode DerivedData (used by wrapper)
+    RUNNER_DERIVED_DATA_PATH: cachePaths.derivedData,
+    // Prepend wrapper bin to PATH so it intercepts xcodebuild
+    PATH: `${cachePaths.wrapperBin}:${process.env.PATH || ''}`,
+  };
+}
+
+/**
+ * Clean up all cache directories for a runner.
+ */
+export async function cleanupRunnerCaches(runnerDir: string): Promise<void> {
+  const cachePaths = getRunnerCachePaths(runnerDir);
+
+  console.log(`[cleanup] Cleaning caches for runner at ${runnerDir}`);
+
+  try {
+    await fs.rm(cachePaths.cacheBase, { recursive: true, force: true });
+    console.log(`[cleanup] Cleared runner caches`);
+  } catch (error) {
+    console.warn(`[cleanup] Could not clean caches:`, error);
+  }
+}
+
+/**
+ * Clean up global build caches that may have accumulated from runners
+ * before per-runner cache isolation was implemented.
+ * Only runs when no runners are currently active.
+ */
+export async function cleanupGlobalBuildCaches(): Promise<void> {
+  const home = os.homedir();
+  const { platform } = detectPlatform();
+
+  // Only clean global caches if no runners are currently running
+  if (runningProcesses.size > 0) {
+    console.log(`[cleanup] Skipping global cache cleanup - ${runningProcesses.size} runners active`);
+    return;
+  }
+
+  console.log('[cleanup] Cleaning global build caches...');
+
+  const globalCaches = [
+    // Xcode DerivedData (macOS) - the main offender
+    ...(platform === 'darwin' ? [
+      path.join(home, 'Library/Developer/Xcode/DerivedData'),
+    ] : []),
+
+    // Global npm cache (we now use per-runner)
+    path.join(home, '.npm/_cacache'),
+
+    // Global Gradle caches (we now use per-runner GRADLE_USER_HOME)
+    path.join(home, '.gradle/caches'),
+    path.join(home, '.gradle/daemon'),
+
+    // CocoaPods cache (macOS)
+    ...(platform === 'darwin' ? [
+      path.join(home, 'Library/Caches/CocoaPods'),
+    ] : []),
+
+    // Android caches
+    path.join(home, '.android/cache'),
+  ];
+
+  for (const cacheDir of globalCaches) {
+    try {
+      const stats = await fs.stat(cacheDir).catch(() => null);
+      if (stats?.isDirectory()) {
+        console.log(`[cleanup] Clearing global cache: ${cacheDir}`);
+        await fs.rm(cacheDir, { recursive: true, force: true });
+      }
+    } catch (error) {
+      console.warn(`[cleanup] Could not clean ${cacheDir}:`, error);
+    }
+  }
+
+  console.log('[cleanup] Global build cache cleanup complete');
+}
+
 // Track running processes
 const runningProcesses = new Map<string, ChildProcess>();
 
@@ -385,14 +533,17 @@ export async function configureRunner(
 export async function startRunner(runnerId: string, runnerDir: string): Promise<void> {
   const { platform } = detectPlatform();
   const runScript = platform === 'win32' ? 'run.cmd' : './run.sh';
-  
+
+  // Set up per-runner cache directories and get environment variables
+  const cacheEnv = await setupRunnerCacheEnv(runnerDir);
+
   return new Promise((resolve, reject) => {
     const proc = spawn(runScript, [], {
       cwd: runnerDir,
       shell: platform === 'win32',
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env },
+      env: { ...process.env, ...cacheEnv },
     });
     
     // Store the process
@@ -472,7 +623,13 @@ export async function startRunner(runnerId: string, runnerDir: string): Promise<
           }
         })();
       } else {
-        // Non-ephemeral runners just update status
+        // Non-ephemeral runners: clean up caches but keep the runner
+        if (runner.runner_dir) {
+          cleanupRunnerCaches(runner.runner_dir).catch(err => {
+            console.error(`[runner] Failed to cleanup caches for ${runnerId}:`, err);
+          });
+        }
+
         if (code === 0) {
           updateRunnerStatus.run('offline', runnerId);
         } else {
