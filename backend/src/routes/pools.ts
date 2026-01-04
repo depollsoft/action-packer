@@ -23,6 +23,9 @@ type CreatePoolBody = {
   maxRunners?: number;
   warmRunners?: number;
   idleTimeoutMinutes?: number;
+  enableKvm?: boolean;
+  enableDockerSocket?: boolean;
+  enablePrivileged?: boolean;
 };
 
 type UpdatePoolBody = {
@@ -33,6 +36,9 @@ type UpdatePoolBody = {
   warmRunners?: number;
   idleTimeoutMinutes?: number;
   enabled?: boolean;
+  enableKvm?: boolean;
+  enableDockerSocket?: boolean;
+  enablePrivileged?: boolean;
 };
 
 // Prepared statements
@@ -59,8 +65,8 @@ const getPoolWithStats = db.prepare(`
 `);
 
 const insertPool = db.prepare(`
-  INSERT INTO runner_pools (id, name, credential_id, platform, architecture, isolation_type, labels, min_runners, max_runners, warm_runners, idle_timeout_minutes)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO runner_pools (id, name, credential_id, platform, architecture, isolation_type, labels, min_runners, max_runners, warm_runners, idle_timeout_minutes, enable_kvm, enable_docker_socket, enable_privileged)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const updatePoolName = db.prepare(`
@@ -77,6 +83,10 @@ const updatePoolScaling = db.prepare(`
 
 const updatePoolEnabled = db.prepare(`
   UPDATE runner_pools SET enabled = ?, updated_at = datetime('now') WHERE id = ?
+`);
+
+const updatePoolDockerOptions = db.prepare(`
+  UPDATE runner_pools SET enable_kvm = ?, enable_docker_socket = ?, enable_privileged = ?, updated_at = datetime('now') WHERE id = ?
 `);
 
 const deletePoolById = db.prepare('DELETE FROM runner_pools WHERE id = ?');
@@ -117,6 +127,9 @@ poolsRouter.get('/', (_req: Request, res: Response) => {
       ...p,
       labels: JSON.parse(p.labels || '[]'),
       enabled: Boolean(p.enabled),
+      enableKvm: Boolean(p.enable_kvm),
+      enableDockerSocket: Boolean(p.enable_docker_socket),
+      enablePrivileged: Boolean(p.enable_privileged),
     }));
     
     res.json({ pools: parsedPools });
@@ -143,6 +156,9 @@ poolsRouter.get('/:id', (req: Request, res: Response) => {
         ...pool,
         labels: JSON.parse(pool.labels || '[]'),
         enabled: Boolean(pool.enabled),
+        enableKvm: Boolean(pool.enable_kvm),
+        enableDockerSocket: Boolean(pool.enable_docker_socket),
+        enablePrivileged: Boolean(pool.enable_privileged),
       },
     });
   } catch (error) {
@@ -180,6 +196,9 @@ poolsRouter.post('/', async (req: Request, res: Response) => {
     const maxRunners = body.maxRunners ?? 5;
     const warmRunners = body.warmRunners ?? 1;
     const idleTimeoutMinutes = body.idleTimeoutMinutes ?? 10;
+    const enableKvm = body.enableKvm ?? false;
+    const enableDockerSocket = body.enableDockerSocket ?? false;
+    const enablePrivileged = body.enablePrivileged ?? false;
     
     // Validate scaling params
     if (minRunners < 0 || maxRunners < 1 || warmRunners < 0) {
@@ -205,7 +224,10 @@ poolsRouter.post('/', async (req: Request, res: Response) => {
       minRunners,
       maxRunners,
       warmRunners,
-      idleTimeoutMinutes
+      idleTimeoutMinutes,
+      enableKvm ? 1 : 0,
+      enableDockerSocket ? 1 : 0,
+      enablePrivileged ? 1 : 0
     );
 
     // Fire-and-forget: ensure warm runners exist (skip during tests)
@@ -222,6 +244,9 @@ poolsRouter.post('/', async (req: Request, res: Response) => {
         ...pool,
         labels: JSON.parse(pool.labels || '[]'),
         enabled: Boolean(pool.enabled),
+        enableKvm: Boolean(pool.enable_kvm),
+        enableDockerSocket: Boolean(pool.enable_docker_socket),
+        enablePrivileged: Boolean(pool.enable_privileged),
       },
     });
   } catch (error) {
@@ -275,6 +300,14 @@ poolsRouter.patch('/:id', async (req: Request, res: Response) => {
     if (body.enabled !== undefined) {
       updatePoolEnabled.run(body.enabled ? 1 : 0, req.params.id);
     }
+    
+    // Update Docker options if any provided
+    if (body.enableKvm !== undefined || body.enableDockerSocket !== undefined || body.enablePrivileged !== undefined) {
+      const enableKvm = body.enableKvm ?? Boolean(pool.enable_kvm);
+      const enableDockerSocket = body.enableDockerSocket ?? Boolean(pool.enable_docker_socket);
+      const enablePrivileged = body.enablePrivileged ?? Boolean(pool.enable_privileged);
+      updatePoolDockerOptions.run(enableKvm ? 1 : 0, enableDockerSocket ? 1 : 0, enablePrivileged ? 1 : 0, req.params.id);
+    }
 
     // Fire-and-forget: if the pool is enabled and has warm_runners, ensure they're created.
     if (process.env.NODE_ENV !== 'test') {
@@ -290,6 +323,9 @@ poolsRouter.patch('/:id', async (req: Request, res: Response) => {
         ...updated,
         labels: JSON.parse(updated.labels || '[]'),
         enabled: Boolean(updated.enabled),
+        enableKvm: Boolean(updated.enable_kvm),
+        enableDockerSocket: Boolean(updated.enable_docker_socket),
+        enablePrivileged: Boolean(updated.enable_privileged),
       },
     });
   } catch (error) {

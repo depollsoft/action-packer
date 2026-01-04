@@ -189,12 +189,20 @@ function initializeSchemaImpl(): void {
       max_runners INTEGER NOT NULL DEFAULT 5,
       warm_runners INTEGER NOT NULL DEFAULT 1,
       idle_timeout_minutes INTEGER NOT NULL DEFAULT 10,
+      enable_kvm INTEGER NOT NULL DEFAULT 0,
+      enable_docker_socket INTEGER NOT NULL DEFAULT 0,
+      enable_privileged INTEGER NOT NULL DEFAULT 0,
       enabled INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (credential_id) REFERENCES credentials(id) ON DELETE CASCADE
     )
   `);
+
+  // Migration for existing databases - add new columns
+  addColumnIfMissing('runner_pools', 'enable_kvm', 'enable_kvm INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('runner_pools', 'enable_docker_socket', 'enable_docker_socket INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('runner_pools', 'enable_privileged', 'enable_privileged INTEGER NOT NULL DEFAULT 0');
 
   // Webhook configurations table
   db.exec(`
@@ -344,6 +352,9 @@ export type RunnerPoolRow = {
   max_runners: number;
   warm_runners: number;
   idle_timeout_minutes: number;
+  enable_kvm: number;
+  enable_docker_socket: number;
+  enable_privileged: number;
   enabled: number;
   created_at: string;
   updated_at: string;
