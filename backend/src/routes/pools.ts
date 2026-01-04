@@ -83,6 +83,8 @@ const updatePoolEnabled = db.prepare(`
 
 const deletePoolById = db.prepare('DELETE FROM runner_pools WHERE id = ?');
 
+const deleteRunnerById = db.prepare('DELETE FROM runners WHERE id = ?');
+
 const getCredentialById = db.prepare('SELECT * FROM credentials WHERE id = ?');
 
 const getPoolRunners = db.prepare(`
@@ -300,9 +302,6 @@ poolsRouter.patch('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Prepared statement for deleting a runner from the database
-const deleteRunnerById = db.prepare('DELETE FROM runners WHERE id = ?');
-
 /**
  * Delete a pool and all its runners
  */
@@ -316,6 +315,9 @@ poolsRouter.delete('/:id', async (req: Request, res: Response) => {
     }
     
     // Get all runners belonging to this pool and clean them up
+    // Note: There's a small race window where a new runner could be added between this query
+    // and pool deletion. Such runners would have pool_id set to NULL by ON DELETE SET NULL.
+    // The UI's orphan detection feature can help identify and clean up such cases if they occur.
     const poolRunners = getPoolRunners.all(req.params.id) as RunnerRow[];
     
     console.log(`[pools] Deleting pool ${req.params.id} with ${poolRunners.length} runners`);
@@ -348,8 +350,8 @@ poolsRouter.delete('/:id', async (req: Request, res: Response) => {
         // Still try to delete the database record
         try {
           deleteRunnerById.run(runner.id);
-        } catch {
-          // Ignore - may already be deleted by ON DELETE SET NULL behavior
+        } catch (deleteErr) {
+          console.error(`[pools] Failed to delete runner record ${runner.id} during cleanup:`, deleteErr);
         }
       }
     });

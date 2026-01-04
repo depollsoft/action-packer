@@ -472,13 +472,26 @@ export function RunnerManager() {
       return;
     }
     
-    // Delete runners one by one (could be optimized with a bulk API endpoint)
-    for (const id of selectedRunnerIds) {
-      try {
-        await runnersApi.delete(id);
-      } catch (err) {
-        console.error(`Failed to delete runner ${id}:`, err);
+    // Delete runners in parallel (could be further optimized with a bulk API endpoint)
+    const ids = Array.from(selectedRunnerIds);
+    const results = await Promise.allSettled(
+      ids.map(id => runnersApi.delete(id))
+    );
+    
+    // Collect and report failures
+    const failedIds: string[] = [];
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        console.error(`Failed to delete runner ${ids[index]}:`, result.reason);
+        failedIds.push(ids[index]);
       }
+    });
+    
+    if (failedIds.length > 0) {
+      alert(
+        `Failed to delete ${failedIds.length} runner${failedIds.length === 1 ? '' : 's'}. ` +
+        'Please check the console for more details and try again.'
+      );
     }
     
     setSelectedRunnerIds(new Set());

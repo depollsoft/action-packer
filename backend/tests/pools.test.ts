@@ -208,6 +208,9 @@ describe('Pools API', () => {
       const poolId = createResponse.body.pool.id;
       
       // Insert test runners directly into the database (simulating runners that exist)
+      // Note: These are simplified test runners without runner_dir or process_id.
+      // The cleanup code handles this gracefully - removeRunner will fail but the
+      // fallback cleanup and database deletion will still succeed.
       const runnerId1 = 'test-runner-1-' + Date.now();
       const runnerId2 = 'test-runner-2-' + Date.now();
       
