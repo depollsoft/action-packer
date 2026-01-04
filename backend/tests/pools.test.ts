@@ -195,5 +195,47 @@ describe('Pools API', () => {
       const getResponse = await request(app).get(`/api/pools/${id}`);
       expect(getResponse.status).toBe(404);
     });
+
+    it('should clean up associated runners when deleting a pool', async () => {
+      // Create a pool first
+      const createResponse = await request(app)
+        .post('/api/pools')
+        .send({
+          name: 'test-pool-with-runners',
+          credentialId: credentialId,
+        });
+      
+      const poolId = createResponse.body.pool.id;
+      
+      // Insert test runners directly into the database (simulating runners that exist)
+      const runnerId1 = 'test-runner-1-' + Date.now();
+      const runnerId2 = 'test-runner-2-' + Date.now();
+      
+      db.prepare(`
+        INSERT INTO runners (id, name, status, pool_id, credential_id, isolation_type, ephemeral, platform, architecture, labels)
+        VALUES (?, ?, 'offline', ?, ?, 'native', 0, 'linux', 'x64', '[]')
+      `).run(runnerId1, 'test-runner-1', poolId, credentialId);
+      
+      db.prepare(`
+        INSERT INTO runners (id, name, status, pool_id, credential_id, isolation_type, ephemeral, platform, architecture, labels)
+        VALUES (?, ?, 'offline', ?, ?, 'native', 0, 'linux', 'x64', '[]')
+      `).run(runnerId2, 'test-runner-2', poolId, credentialId);
+      
+      // Verify runners exist
+      const runnersBefore = db.prepare('SELECT id FROM runners WHERE pool_id = ?').all(poolId);
+      expect(runnersBefore.length).toBe(2);
+      
+      // Delete the pool
+      const response = await request(app).delete(`/api/pools/${poolId}`);
+      expect(response.status).toBe(204);
+      
+      // Verify the pool is deleted
+      const getPoolResponse = await request(app).get(`/api/pools/${poolId}`);
+      expect(getPoolResponse.status).toBe(404);
+      
+      // Verify runners are also deleted (not just orphaned with NULL pool_id)
+      const runnersAfter = db.prepare('SELECT id FROM runners WHERE id IN (?, ?)').all(runnerId1, runnerId2);
+      expect(runnersAfter.length).toBe(0);
+    });
   });
 });

@@ -5,10 +5,12 @@
 
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { db, type RunnerPoolRow, type CredentialRow } from '../db/index.js';
+import { db, type RunnerPoolRow, type CredentialRow, type RunnerRow } from '../db/index.js';
 import { decrypt, generateSecret } from '../utils/index.js';
 import { createGitHubClient, type GitHubScope } from '../services/index.js';
 import { ensureWarmRunners, getPoolById as getPoolRowById } from '../services/autoscaler.js';
+import { removeRunner, stopOrphanedRunner, cleanupRunnerFiles } from '../services/runnerManager.js';
+import { removeDockerRunner } from '../services/dockerRunner.js';
 
 export const poolsRouter = Router();
 
@@ -298,8 +300,11 @@ poolsRouter.patch('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// Prepared statement for deleting a runner from the database
+const deleteRunnerById = db.prepare('DELETE FROM runners WHERE id = ?');
+
 /**
- * Delete a pool
+ * Delete a pool and all its runners
  */
 poolsRouter.delete('/:id', async (req: Request, res: Response) => {
   try {
@@ -310,9 +315,51 @@ poolsRouter.delete('/:id', async (req: Request, res: Response) => {
       return;
     }
     
-    // Note: Runners belonging to this pool will have pool_id set to NULL
-    // They won't be deleted automatically
+    // Get all runners belonging to this pool and clean them up
+    const poolRunners = getPoolRunners.all(req.params.id) as RunnerRow[];
+    
+    console.log(`[pools] Deleting pool ${req.params.id} with ${poolRunners.length} runners`);
+    
+    // Clean up each runner in parallel (fire-and-forget pattern for speed)
+    const cleanupPromises = poolRunners.map(async (runner) => {
+      try {
+        console.log(`[pools] Cleaning up runner ${runner.name} (${runner.id})`);
+        
+        if (runner.isolation_type === 'docker') {
+          await removeDockerRunner(runner.id).catch((err) => {
+            console.error(`[pools] Failed to remove Docker runner ${runner.id}:`, err);
+          });
+        } else {
+          // For native runners, try the full removal first
+          // This handles deregistration from GitHub and cleanup
+          await removeRunner(runner.id).catch(async (err) => {
+            // If removeRunner fails (e.g., runner already gone), do manual cleanup
+            console.error(`[pools] removeRunner failed for ${runner.id}, doing manual cleanup:`, err);
+            await stopOrphanedRunner(runner.id, runner.process_id).catch(() => {});
+            await cleanupRunnerFiles(runner.runner_dir).catch(() => {});
+          });
+        }
+        
+        // Delete the database record
+        deleteRunnerById.run(runner.id);
+        console.log(`[pools] Cleaned up runner ${runner.name}`);
+      } catch (err) {
+        console.error(`[pools] Failed to cleanup runner ${runner.name}:`, err);
+        // Still try to delete the database record
+        try {
+          deleteRunnerById.run(runner.id);
+        } catch {
+          // Ignore - may already be deleted by ON DELETE SET NULL behavior
+        }
+      }
+    });
+    
+    // Wait for all cleanup to complete (with a timeout to avoid hanging)
+    await Promise.allSettled(cleanupPromises);
+    
+    // Now delete the pool
     deletePoolById.run(req.params.id);
+    console.log(`[pools] Deleted pool ${req.params.id}`);
     
     res.status(204).send();
   } catch (error) {
