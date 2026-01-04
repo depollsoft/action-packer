@@ -13,7 +13,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { db, type RunnerRow, type RunnerPoolRow } from '../db/index.js';
 import { createClientFromCredentialId } from './credentialResolver.js';
-import { cleanupRunnerFiles, isRunnerProcessAlive, stopOrphanedRunner, RUNNERS_DIR } from './runnerManager.js';
+import { cleanupRunnerFiles, isRunnerProcessAlive, stopOrphanedRunner, RUNNERS_DIR, cleanupGlobalBuildCaches } from './runnerManager.js';
 import { removeDockerRunner, getContainerStatus } from './dockerRunner.js';
 import { ensureWarmRunners } from './autoscaler.js';
 
@@ -257,6 +257,14 @@ async function reconcileRunnersInternal(): Promise<void> {
     const orphanedDirsRemoved = await cleanupOrphanedDirectories();
     if (orphanedDirsRemoved > 0) {
       stats.orphanedRemoved += orphanedDirsRemoved;
+    }
+
+    // Clean up global build caches (legacy caches from before per-runner isolation)
+    // Only runs when no runners are active
+    try {
+      await cleanupGlobalBuildCaches();
+    } catch (error) {
+      console.error('[reconciler] Failed to cleanup global build caches:', error);
     }
 
     console.log(`[reconciler] Reconciliation complete:`, stats);

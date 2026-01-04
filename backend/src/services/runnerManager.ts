@@ -114,6 +114,60 @@ export async function cleanupRunnerCaches(runnerDir: string): Promise<void> {
   }
 }
 
+/**
+ * Clean up global build caches that may have accumulated from runners
+ * before per-runner cache isolation was implemented.
+ * Only runs when no runners are currently active.
+ */
+export async function cleanupGlobalBuildCaches(): Promise<void> {
+  const home = os.homedir();
+  const { platform } = detectPlatform();
+
+  // Only clean global caches if no runners are currently running
+  if (runningProcesses.size > 0) {
+    console.log(`[cleanup] Skipping global cache cleanup - ${runningProcesses.size} runners active`);
+    return;
+  }
+
+  console.log('[cleanup] Cleaning global build caches...');
+
+  const globalCaches = [
+    // Xcode DerivedData (macOS) - the main offender
+    ...(platform === 'darwin' ? [
+      path.join(home, 'Library/Developer/Xcode/DerivedData'),
+    ] : []),
+
+    // Global npm cache (we now use per-runner)
+    path.join(home, '.npm/_cacache'),
+
+    // Global Gradle caches (we now use per-runner GRADLE_USER_HOME)
+    path.join(home, '.gradle/caches'),
+    path.join(home, '.gradle/daemon'),
+
+    // CocoaPods cache (macOS)
+    ...(platform === 'darwin' ? [
+      path.join(home, 'Library/Caches/CocoaPods'),
+    ] : []),
+
+    // Android caches
+    path.join(home, '.android/cache'),
+  ];
+
+  for (const cacheDir of globalCaches) {
+    try {
+      const stats = await fs.stat(cacheDir).catch(() => null);
+      if (stats?.isDirectory()) {
+        console.log(`[cleanup] Clearing global cache: ${cacheDir}`);
+        await fs.rm(cacheDir, { recursive: true, force: true });
+      }
+    } catch (error) {
+      console.warn(`[cleanup] Could not clean ${cacheDir}:`, error);
+    }
+  }
+
+  console.log('[cleanup] Global build cache cleanup complete');
+}
+
 // Track running processes
 const runningProcesses = new Map<string, ChildProcess>();
 
